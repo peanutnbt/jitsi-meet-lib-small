@@ -7,19 +7,10 @@ import JitsiParticipant from './JitsiParticipant';
 import JitsiTrackError from './JitsiTrackError';
 import * as JitsiTrackErrors from './JitsiTrackErrors';
 import RTC from './modules/RTC/RTC';
-import GlobalOnErrorHandler from './modules/util/GlobalOnErrorHandler';
 import {
     FEATURE_JIGASI,
 } from './modules/xmpp/xmpp';
-import * as MediaType from './service/RTC/MediaType';
 import VideoType from './service/RTC/VideoType';
-
-/**
- * How long since Jicofo is supposed to send a session-initiate, before
- * {@link ACTION_JINGLE_SI_TIMEOUT} analytics event is sent (in ms).
- * @type {number}
- */
-const JINGLE_SI_TIMEOUT = 5000;
 
 /**
  * Creates a JitsiConference object with the given name and properties.
@@ -66,59 +57,8 @@ export default function JitsiConference(options) {
     this._init(options);
 
     this.jvbJingleSession = null;
-    this.lastDominantSpeaker = null;
-    this.authEnabled = false;
-    this.startAudioMuted = false;
-    this.startVideoMuted = false;
-    this.startMutedPolicy = {
-        audio: false,
-        video: false
-    };
-    this.isMutedByFocus = false;
-
-    // when muted by focus we receive the jid of the initiator of the mute
-    this.mutedByFocusActor = null;
-
-    this.isVideoMutedByFocus = false;
-
-    // when video muted by focus we receive the jid of the initiator of the mute
-    this.mutedVideoByFocusActor = null;
-
-    // Flag indicates if the 'onCallEnded' method was ever called on this
-    // instance. Used to log extra analytics event for debugging purpose.
-    // We need to know if the potential issue happened before or after
-    // the restart.
-    this.wasStopped = false;
-
     // Conference properties, maintained by jicofo.
     this.properties = {};
-    /**
-     * Indicates whether the connection is interrupted or not.
-     */
-    this.isJvbConnectionInterrupted = false;
-    /**
-     * Stores reference to deferred start P2P task. It's created when 3rd
-     * participant leaves the room in order to avoid ping pong effect (it
-     * could be just a page reload).
-     * @type {number|null}
-     */
-    this.deferredStartP2PTask = null;
-
-    const delay = parseInt(options.config.p2p && options.config.p2p.backToP2PDelay, 10);
-
-    /**
-     * A delay given in seconds, before the conference switches back to P2P
-     * after the 3rd participant has left.
-     * @type {number}
-     */
-    this.backToP2PDelay = isNaN(delay) ? 5 : delay;
-    /**
-     * If set to <tt>true</tt> it means the P2P ICE is no longer connected.
-     * When <tt>false</tt> it means that P2P ICE (media) connection is up
-     * and running.
-     * @type {boolean}
-     */
-    this.isP2PConnectionInterrupted = false;
 
     /**
      * Flag set to <tt>true</tt> when P2P session has been established
@@ -145,15 +85,11 @@ JitsiConference.prototype._init = function (options = {}) {
     if (options.connection) {
         this.connection = options.connection;
         this.xmpp = this.connection.xmpp;
-
         // Setup XMPP events only if we have new connection object.
         this.eventManager.setupXMPPListeners();
     }
-
     const { config } = this.options;
-
     this.room = this.xmpp.createRoom(this.options.name, { ...config });
-
     if (!this.rtc) {
         console.log("----------Create New RTC---------")
         this.rtc = new RTC(this, options);
@@ -177,27 +113,6 @@ JitsiConference.prototype.join = function (password, replaceParticipant = false)
 };
 
 /**
- * Check if joined to the conference.
- */
-JitsiConference.prototype.isJoined = function () {
-    return this.room && this.room.joined;
-};
-/**
- * Returns the local tracks of the given media type, or all local tracks if no
- * specific type is given.
- * @param {MediaType} [mediaType] Optional media type (audio or video).
- */
-JitsiConference.prototype.getLocalTracks = function (mediaType) {
-    let tracks = [];
-
-    if (this.rtc) {
-        tracks = this.rtc.getLocalTracks(mediaType);
-    }
-
-    return tracks;
-};
-
-/**
  * Attaches a handler for events(For example - "participant joined".) in the
  * conference. All possible event are defined in JitsiConferenceEvents.
  * @param eventId the event ID.
@@ -208,7 +123,6 @@ JitsiConference.prototype.getLocalTracks = function (mediaType) {
  */
 JitsiConference.prototype.on = function (eventId, handler) {
     if (this.eventEmitter) {
-        // console.log("------------inside conference emitter call--------: ", eventId)
         this.eventEmitter.on(eventId, handler);
     }
 };
@@ -230,28 +144,6 @@ JitsiConference.prototype.off = function (eventId, handler) {
 // Common aliases for event emitter
 JitsiConference.prototype.addEventListener = JitsiConference.prototype.on;
 JitsiConference.prototype.removeEventListener = JitsiConference.prototype.off;
-
-/**
- * Returns the list of local tracks that need to be added to the peerconnection on join.
- * This takes the startAudioMuted/startVideoMuted flags into consideration since we do not
- * want to add the tracks if the user joins the call audio/video muted. The tracks will be
- * added when the user unmutes for the first time.
- * @returns {Array<JitsiLocalTrack>} - list of local tracks that are unmuted.
- */
-JitsiConference.prototype._getInitialLocalTracks = function () {
-    return this.getLocalTracks()
-        .filter(track => (track.getType() === MediaType.AUDIO) || (track.getType() === MediaType.VIDEO));
-};
-
-/**
- * Removes JitsiLocalTrack from the conference and performs
- * a new offer/answer cycle.
- * @param {JitsiLocalTrack} track
- * @returns {Promise}
- */
-JitsiConference.prototype.removeTrack = function (track) {
-    return this.replaceTrack(track, null);
-};
 
 /**
  * Replaces oldTrack with newTrack and performs a single offer/answer
@@ -352,26 +244,6 @@ JitsiConference.prototype._setupNewTrack = function (newTrack) {
 JitsiConference.prototype.getParticipants = function () {
     return Object.values(this.participants);
 };
-
-/**
- * Returns the number of participants in the conference, including the local
- * participant.
- * @param countHidden {boolean} Whether or not to include hidden participants
- * in the count. Default: false.
- **/
-JitsiConference.prototype.getParticipantCount
-    = function (countHidden = false) {
-
-        let participants = this.getParticipants();
-
-        // if (!countHidden) {
-        //     participants = participants.filter(p => !p.isHidden());
-        // }
-
-        // Add one for the local participant.
-        return participants.length + 1;
-    };
-
 /**
  * @returns {JitsiParticipant} the participant in this conference with the
  * specified id (or undefined if there isn't one).
@@ -413,13 +285,10 @@ JitsiConference.prototype.onMemberJoined = function (
 
     this.participants[id] = participant;
     console.log("----------Emit User Joined---------")
-    this.eventEmitter.emit(
-        JitsiConferenceEvents.USER_JOINED,
-        id,
-        participant);
+    this.eventEmitter.emit(JitsiConferenceEvents.USER_JOINED,id,participant);
 
     // maybeStart only if we had finished joining as then we will have information for the number of participants
-    if (this.isJoined()) {
+    if (this.room && this.room.joined) {
         this._maybeStartOrStopP2P();
     }
 };
@@ -496,29 +365,18 @@ JitsiConference.prototype.onTransportInfo = function (session, transportInfo) {
         this.p2pJingleSession.addIceCandidates(transportInfo);
     }
 };
-
-/**
- * Handles an incoming call event for the P2P jingle session.
- */
-JitsiConference.prototype._onIncomingCallP2P = function (jingleSession, jingleOffer) {
-    this._acceptP2PIncomingCall(jingleSession, jingleOffer);
-};
-
 /**
  * Handles an incoming call event.
  */
 JitsiConference.prototype.onIncomingCall = function (jingleSession, jingleOffer, now) {
     console.log("---------On Incoming call---------")
-    this._acceptJvbIncomingCall(jingleSession, jingleOffer, now);
+    this._acceptJvbIncomingCall(jingleSession, jingleOffer);
 };
 
 /**
  * Accepts an incoming call event for the JVB jingle session.
  */
-JitsiConference.prototype._acceptJvbIncomingCall = function (
-    jingleSession,
-    jingleOffer,
-    now) {
+JitsiConference.prototype._acceptJvbIncomingCall = function (jingleSession,jingleOffer) {
 
     console.log("----------Accept JVB incoming call----------")
     // Accept incoming call
@@ -532,30 +390,21 @@ JitsiConference.prototype._acceptJvbIncomingCall = function (
         return;
     }
 
-    const localTracks = this._getInitialLocalTracks();
+    jingleSession.acceptOffer(
+        jingleOffer,
+        () => {
 
-    try {
-        jingleSession.acceptOffer(
-            jingleOffer,
-            () => {
-
+            this.eventEmitter.emit(
+                JitsiConferenceEvents._MEDIA_SESSION_STARTED,
+                jingleSession);
+            if (!this.isP2PActive()) {
                 this.eventEmitter.emit(
-                    JitsiConferenceEvents._MEDIA_SESSION_STARTED,
+                    JitsiConferenceEvents._MEDIA_SESSION_ACTIVE_CHANGED,
                     jingleSession);
-                if (!this.isP2PActive()) {
-                    this.eventEmitter.emit(
-                        JitsiConferenceEvents._MEDIA_SESSION_ACTIVE_CHANGED,
-                        jingleSession);
-                }
-            },
-            error => {
-                GlobalOnErrorHandler.callErrorHandler(error);
-            },
-            localTracks
-        );
-    } catch (e) {
-        GlobalOnErrorHandler.callErrorHandler(e);
-    }
+            }
+        },
+        error => { }
+    );
 };
 
 /**
@@ -568,35 +417,6 @@ JitsiConference.prototype.myUserId = function () {
             ? Strophe.getResourceFromJid(this.room.myroomjid)
             : null);
 };
-
-/**
- * Will return P2P or JVB <tt>TraceablePeerConnection</tt> depending on
- * which connection is currently active.
- *
- * @return {TraceablePeerConnection|null} null if there isn't any active
- * <tt>TraceablePeerConnection</tt> currently available.
- * @public (FIXME how to make package local ?)
- */
-JitsiConference.prototype.getActivePeerConnection = function () {
-    const session = this.isP2PActive() ? this.p2pJingleSession : this.jvbJingleSession;
-
-    return session ? session.peerconnection : null;
-};
-
-/**
- * Returns the connection state for the current room. Its ice connection state
- * for its session.
- * NOTE that "completed" ICE state which can appear on the P2P connection will
- * be converted to "connected".
- * @return {string|null} ICE state name or <tt>null</tt> if there is no active
- * peer connection at this time.
- */
-JitsiConference.prototype.getConnectionState = function () {
-    const peerConnection = this.getActivePeerConnection();
-
-    return peerConnection ? peerConnection.getConnectionState() : null;
-};
-
 /**
  * Handles track attached to container (Calls associateStreamWithVideoTag method
  * from statistics module)
@@ -635,7 +455,6 @@ JitsiConference.prototype._onTrackAttach = function (track, container) {
 JitsiConference.prototype._acceptP2PIncomingCall = function (
     jingleSession,
     jingleOffer) {
-    this.isP2PConnectionInterrupted = false;
 
     console.log("----------Accept P2P incoming call----------")
 
@@ -656,7 +475,6 @@ JitsiConference.prototype._acceptP2PIncomingCall = function (
         remoteID = participant.getStatsID() || remoteID;
     }
 
-    const localTracks = this.getLocalTracks();
 
     this.p2pJingleSession.acceptOffer(
         jingleOffer,
@@ -665,9 +483,7 @@ JitsiConference.prototype._acceptP2PIncomingCall = function (
                 JitsiConferenceEvents._MEDIA_SESSION_STARTED,
                 this.p2pJingleSession);
         },
-        error => {
-        },
-        localTracks);
+        error => { });
 };
 
 /**

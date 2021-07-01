@@ -1,32 +1,15 @@
-/* global __filename, $ */
-
-import { getLogger } from 'jitsi-meet-logger';
 import { $iq, Strophe } from 'strophe.js';
 
-import * as CodecMimeType from '../../service/RTC/CodecMimeType';
-import MediaDirection from '../../service/RTC/MediaDirection';
-import {
-    ICE_DURATION,
-    ICE_STATE_CHANGED
-} from '../../service/statistics/AnalyticsEvents';
 import XMPPEvents from '../../service/xmpp/XMPPEvents';
-import { SS_DEFAULT_FRAME_RATE } from '../RTC/ScreenObtainer';
 import SDP from '../sdp/SDP';
-import SDPDiffer from '../sdp/SDPDiffer';
 import SDPUtil from '../sdp/SDPUtil';
-import Statistics from '../statistics/statistics';
 import AsyncQueue from '../util/AsyncQueue';
-import GlobalOnErrorHandler from '../util/GlobalOnErrorHandler';
-import { integerHash } from '../util/StringUtils';
 
-import browser from './../browser';
 import JingleSession from './JingleSession';
 import * as JingleSessionState from './JingleSessionState';
-import MediaSessionEvents from './MediaSessionEvents';
 import SignalingLayerImpl from './SignalingLayerImpl';
 import XmppConnection from './XmppConnection';
 
-const logger = getLogger(__filename);
 
 /**
  * Constant tells how long we're going to wait for IQ response, before timeout
@@ -35,12 +18,6 @@ const logger = getLogger(__filename);
  */
 const IQ_TIMEOUT = 10000;
 
-/*
- * The default number of samples (per stat) to keep when webrtc stats gathering
- * is enabled in TraceablePeerConnection.
- */
-const DEFAULT_MAX_STATS = 300;
-
 /**
  * The time duration for which the client keeps gathering ICE candidates to be sent out in a single IQ.
  * @type {number} timeout in ms.
@@ -48,8 +25,6 @@ const DEFAULT_MAX_STATS = 300;
 const ICE_CAND_GATHERING_TIMEOUT = 150;
 
 /**
- * @typedef {Object} JingleSessionPCOptions
- * @property {Object} abTesting - A/B testing related options (ask George).
  * @property {boolean} abTesting.enableSuspendVideoTest - enables the suspend
  * video test ?(ask George).
  * @property {boolean} disableH264 - Described in the config.js[1].
@@ -68,51 +43,11 @@ const ICE_CAND_GATHERING_TIMEOUT = 150;
  * @property {boolean} webrtcIceUdpDisable - Described in the config.js[1].
  * @property {boolean} webrtcIceTcpDisable - Described in the config.js[1].
  *
- * [1]: https://github.com/jitsi/jitsi-meet/blob/master/config.js
  */
 /**
  *
  */
 export default class JingleSessionPC extends JingleSession {
-    /**
-     * Parses 'senders' attribute of the video content.
-     * @param {jQuery} jingleContents
-     * @return {string|null} one of the values of content "senders" attribute
-     * defined by Jingle. If there is no "senders" attribute or if the value is
-     * invalid then <tt>null</tt> will be returned.
-     * @private
-     */
-    static parseVideoSenders(jingleContents) {
-        const videoContents = jingleContents.find('>content[name="video"]');
-
-        if (videoContents.length) {
-            const senders = videoContents[0].getAttribute('senders');
-
-            if (senders === 'both'
-                || senders === 'initiator'
-                || senders === 'responder'
-                || senders === 'none') {
-                return senders;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Parses the video max frame height value out of the 'content-modify' IQ.
-     *
-     * @param {jQuery} jingleContents - A jQuery selector pointing to the '>jingle' element.
-     * @returns {Number|null}
-     */
-    static parseMaxFrameHeight(jingleContents) {
-        const maxFrameHeightSel = jingleContents.find('>content[name="video"]>max-frame-height');
-
-        return maxFrameHeightSel.length ? Number(maxFrameHeightSel.text()) : null;
-    }
-
-    /* eslint-disable max-params */
-
     /**
      * Creates new <tt>JingleSessionPC</tt>
      * @param {string} sid the Jingle Session ID - random string which identifies the session
@@ -153,21 +88,6 @@ export default class JingleSessionPC extends JingleSession {
          * @private
          */
         this._bridgeSessionId = null;
-
-        /**
-         * used to update Jicofo once the XMPP connection goes back online.
-         * @type {SDP|undefined}
-         * @private
-         */
-        this._cachedOldLocalSdp = undefined;
-
-        /**
-         * used to update Jicofo once the XMPP connection goes back online.
-         * @type {SDP|undefined}
-         * @private
-         */
-        this._cachedNewLocalSdp = undefined;
-
         /**
          * Stores result of {@link window.performance.now()} at the time when
          * ICE enters 'checking' state.
@@ -187,41 +107,6 @@ export default class JingleSessionPC extends JingleSession {
          * @private
          */
         this._gatheringStartedTimestamp = null;
-
-        /**
-         * Local preference for the receive video max frame height.
-         *
-         * @type {Number|undefined}
-         */
-        this.localRecvMaxFrameHeight = undefined;
-
-        /**
-         * Indicates whether or not this session is willing to send/receive
-         * video media. When set to <tt>false</tt> the underlying peer
-         * connection will disable local video transfer and the remote peer will
-         * be will be asked to stop sending video via 'content-modify' IQ
-         * (the senders attribute of video contents will be adjusted
-         * accordingly). Note that this notification is sent only in P2P
-         * session, because Jicofo does not support it yet. Obviously when
-         * the value is changed from <tt>false</tt> to <tt>true</tt> another
-         * notification will be sent to resume video transfer on the remote
-         * side.
-         * @type {boolean}
-         * @private
-         */
-        this._localVideoActive = true;
-
-        /**
-         * Indicates whether or not the remote peer has video transfer active.
-         * When set to <tt>true</tt> it means that remote peer is neither
-         * sending nor willing to receive video. In such case we'll ask
-         * our peerconnection to stop sending video by calling
-         * {@link TraceablePeerConnection.setVideoTransferActive} with
-         * <tt>false</tt>.
-         * @type {boolean}
-         * @private
-         */
-        this._remoteVideoActive = true;
 
         /**
          * Marks that ICE gathering duration has been reported already. That
@@ -282,10 +167,8 @@ export default class JingleSessionPC extends JingleSession {
         this._xmppListeners.push(
             connection.addEventListener(
                 XmppConnection.Events.CONN_STATUS_CHANGED,
-                this.onXmppStatusChanged.bind(this))
+                () => { })
         );
-
-        this._removeSenderVideoConstraintsChangeListener = undefined;
     }
 
     /* eslint-enable max-params */
@@ -299,10 +182,6 @@ export default class JingleSessionPC extends JingleSession {
         return this.state !== JingleSessionState.ENDED;
     }
 
-    /**
-     * @inheritDoc
-     * @param {JingleSessionPCOptions} options  - a set of config options.
-     */
     doInitialize(options) {
         console.log("----------Jingle Session doInitialize-----------")
 
@@ -316,33 +195,12 @@ export default class JingleSessionPC extends JingleSession {
         this.webrtcIceUdpDisable = Boolean(options.webrtcIceUdpDisable);
         this.webrtcIceTcpDisable = Boolean(options.webrtcIceTcpDisable);
 
-        const pcOptions = { disableRtx: options.disableRtx };
-
-        pcOptions.capScreenshareBitrate = false;
-        pcOptions.enableInsertableStreams = options.enableInsertableStreams;
-        pcOptions.videoQuality = options.videoQuality;
-        pcOptions.forceTurnRelay = options.forceTurnRelay;
-        pcOptions.audioQuality = options.audioQuality;
-        pcOptions.usesUnifiedPlan = true
-
-        // H264 does not support simulcast, so it needs to be disabled.
-        pcOptions.disableSimulcast
-            = options.disableSimulcast
-            || (options.preferH264 && !options.disableH264)
-            || (options.videoQuality && options.videoQuality.preferredCodec === CodecMimeType.H264);
-
-        // Disable simulcast for low fps screenshare and enable it for high fps screenshare.
-        // testing.capScreenshareBitrate config.js setting has now been deprecated.
-        pcOptions.capScreenshareBitrate = pcOptions.disableSimulcast
-            || !(typeof options.desktopSharingFrameRate?.max === 'number'
-                && options.desktopSharingFrameRate?.max > SS_DEFAULT_FRAME_RATE);
-
         this.peerconnection
             = this.rtc.createPeerConnection(
                 this.signalingLayer,
                 this.iceConfig,
                 this.isP2P,
-                pcOptions);
+                { usesUnifiedPlan: true });
 
         this.peerconnection.onicecandidate = ev => {
             if (!ev) {
@@ -362,10 +220,8 @@ export default class JingleSessionPC extends JingleSession {
                 if (this._gatheringStartedTimestamp === null) {
                     this._gatheringStartedTimestamp = now;
                 }
-
                 // Discard candidates of disabled protocols.
                 let protocol = candidate.protocol;
-
                 if (typeof protocol === 'string') {
                     protocol = protocol.toLowerCase();
                     if (protocol === 'tcp' || protocol === 'ssltcp') {
@@ -383,23 +239,6 @@ export default class JingleSessionPC extends JingleSession {
             }
             this.sendIceCandidate(candidate);
         };
-
-        // Note there is a change in the spec about closed:
-        // This value moved into the RTCPeerConnectionState enum in
-        // the May 13, 2016 draft of the specification, as it reflects the state
-        // of the RTCPeerConnection, not the signaling connection. You now
-        // detect a closed connection by checking for connectionState to be
-        // "closed" instead.
-        // I suppose at some point this will be moved to onconnectionstatechange
-        this.peerconnection.onsignalingstatechange = () => {
-            if (this.peerconnection.signalingState === 'stable') {
-                this.wasstable = true;
-            } else if (this.peerconnection.signalingState === 'closed'
-                || this.peerconnection.connectionState === 'closed') {
-                this.room.eventEmitter.emit(XMPPEvents.SUSPEND_DETECTED, this);
-            }
-        };
-
         /**
          * The oniceconnectionstatechange event handler contains the code to
          * execute when the iceconnectionstatechange event, of type Event,
@@ -409,11 +248,7 @@ export default class JingleSessionPC extends JingleSession {
         this.peerconnection.oniceconnectionstatechange = () => {
             const now = window.performance.now();
             let isStable = false;
-
-            this.room.eventEmitter.emit(
-                XMPPEvents.ICE_CONNECTION_STATE_CHANGED,
-                this,
-                this.peerconnection.iceConnectionState);
+            this.room.eventEmitter.emit(XMPPEvents.ICE_CONNECTION_STATE_CHANGED,this,this.peerconnection.iceConnectionState);
             switch (this.peerconnection.iceConnectionState) {
                 case 'checking':
                     this._iceCheckingStartedTimestamp = now;
@@ -426,11 +261,9 @@ export default class JingleSessionPC extends JingleSession {
                         const usesTerminateForRestart = !this.options.enableIceRestart
 
                         if (this.isReconnect || usesTerminateForRestart) {
-                            this.room.eventEmitter.emit(
-                                XMPPEvents.CONNECTION_RESTORED, this);
+                            this.room.eventEmitter.emit(XMPPEvents.CONNECTION_RESTORED, this);
                         }
                     }
-
                     // Add a workaround for an issue on chrome in Unified plan when the local endpoint is the offerer.
                     // The 'signalingstatechange' event for 'stable' is handled after the 'iceconnectionstatechange' event
                     // for 'completed' is handled by the client. This prevents the client from firing a
@@ -441,42 +274,22 @@ export default class JingleSessionPC extends JingleSession {
                     if (!this.wasConnected
                         && (this.wasstable
                             || isStable
-                            || (this.usesUnifiedPlan && this.isInitiator && browser.isChromiumBased()))) {
+                            || (this.usesUnifiedPlan && this.isInitiator))) {
 
                         // Switch between ICE gathering and ICE checking whichever
                         // started first (scenarios are different for initiator
                         // vs responder)
-                        const iceStarted
-                            = Math.min(
-                                this._iceCheckingStartedTimestamp,
-                                this._gatheringStartedTimestamp);
-
+                        const iceStarted = Math.min(this._iceCheckingStartedTimestamp, this._gatheringStartedTimestamp);
                         this.establishmentDuration = now - iceStarted;
                         this.wasConnected = true;
-                        this.room.eventEmitter.emit(
-                            XMPPEvents.CONNECTION_ESTABLISHED, this);
+                        this.room.eventEmitter.emit(XMPPEvents.CONNECTION_ESTABLISHED, this);
                     }
                     this.isReconnect = false;
                     break;
             }
         };
-
-       
         // The signaling layer will bind it's listeners at this point
         this.signalingLayer.setChatRoom(this.room);
-    }
-
-    /**
-     * Remote preference for receive video max frame height.
-     *
-     * @returns {Number|undefined}
-     */
-    getRemoteRecvMaxFrameHeight() {
-        if (this.isP2P) {
-            return this.remoteRecvMaxFrameHeight;
-        }
-
-        return undefined;
     }
 
     /**
@@ -492,11 +305,6 @@ export default class JingleSessionPC extends JingleSession {
             const jcand = SDPUtil.candidateToJingle(candidate.candidate);
 
             if (!(ice && jcand)) {
-                const errorMesssage = 'failed to get ice && jcand';
-
-                GlobalOnErrorHandler.callErrorHandler(new Error(errorMesssage));
-                logger.error(errorMesssage);
-
                 return;
             }
             ice.xmlns = 'urn:xmpp:jingle:transports:ice-udp:1';
@@ -516,8 +324,6 @@ export default class JingleSessionPC extends JingleSession {
                 this.sendIceCandidates([candidate]);
             }
         } else {
-            logger.log(`${this} sendIceCandidate: last candidate`);
-
             // FIXME: remember to re-think in ICE-restart
             this.lasticecandidate = true;
         }
@@ -531,11 +337,8 @@ export default class JingleSessionPC extends JingleSession {
      */
     sendIceCandidates(candidates) {
         if (!this._assertNotEnded('sendIceCandidates')) {
-
             return;
         }
-
-        logger.log(`${this} sendIceCandidates ${JSON.stringify(candidates)}`);
         const cand = $iq({
             to: this.remoteJid,
             type: 'set'
@@ -601,34 +404,22 @@ export default class JingleSessionPC extends JingleSession {
 
         // might merge last-candidate notification into this, but it is called
         // a lot later. See webrtc issue #2340
-        // logger.log('was this the last candidate', this.lasticecandidate);
-        this.connection.sendIQ(
-            cand, null, this.newJingleErrorHandler(cand), IQ_TIMEOUT);
+        this.connection.sendIQ(cand, null, this.newJingleErrorHandler(cand), IQ_TIMEOUT);
     }
 
-    /**
-     * {@inheritDoc}
-     */
     addIceCandidates(elem) {
         if (this.peerconnection.signalingState === 'closed') {
-            logger.warn(`${this} Ignored add ICE candidate when in closed state`);
-
             return;
         }
-
         const iceCandidates = [];
-
         elem.find('>content>transport>candidate')
             .each((idx, candidate) => {
                 let line = SDPUtil.candidateFromJingle(candidate);
-
                 line = line.replace('\r\n', '').replace('a=', '');
-
                 // FIXME this code does not care to handle
                 // non-bundle transport
                 const rtcCandidate = new RTCIceCandidate({
                     sdpMLineIndex: 0,
-
                     // FF comes up with more complex names like audio-23423,
                     // Given that it works on both Chrome and FF without
                     // providing it, let's leave it like this for the time
@@ -637,13 +428,10 @@ export default class JingleSessionPC extends JingleSession {
                     sdpMid: '',
                     candidate: line
                 });
-
                 iceCandidates.push(rtcCandidate);
             });
 
         if (!iceCandidates.length) {
-            logger.error(`${this} No ICE candidates to add ?`, elem[0] && elem[0].outerHTML);
-
             return;
         }
 
@@ -654,16 +442,11 @@ export default class JingleSessionPC extends JingleSession {
         const workFunction = finishedCallback => {
             for (const iceCandidate of iceCandidates) {
                 this.peerconnection.addIceCandidate(iceCandidate)
-                    .then(
-                        () => logger.debug(`${this} addIceCandidate ok!`),
-                        err => logger.error(`${this} addIceCandidate failed!`, err));
+                    .then(() => {},err => {});
             }
-
             finishedCallback();
-            logger.debug(`${this} ICE candidates task finished`);
         };
 
-        logger.debug(`${this} Queued add (${iceCandidates.length}) ICE candidates task`);
         this.modificationQueue.push(workFunction);
     }
 
@@ -692,7 +475,6 @@ export default class JingleSessionPC extends JingleSession {
 
                         if (owner && owner.length) {
                             if (isNaN(ssrc) || ssrc < 0) {
-                                logger.warn(`${this} Invalid SSRC ${ssrc} value received for ${owner}`);
                             } else {
                                 this.signalingLayer.setSSRCOwner(
                                     ssrc,
@@ -703,27 +485,6 @@ export default class JingleSessionPC extends JingleSession {
             }
         });
     }
-
-    /**
-     * Makes the underlying TraceablePeerConnection generate new SSRC for
-     * the recvonly video stream.
-     * @deprecated
-     */
-    generateRecvonlySsrc() {
-        if (this.peerconnection) {
-            this.peerconnection.generateRecvonlySsrc();
-        } else {
-            logger.error(`${this} Unable to generate recvonly SSRC - no peerconnection`);
-        }
-    }
-
-    /**
-     * Returns the video codec configured as the preferred codec on the peerconnection.
-     */
-    getConfiguredVideoCodec() {
-        return this.peerconnection.getConfiguredVideoCodec();
-    }
-
     /* eslint-disable max-params */
     /**
      * Accepts incoming Jingle 'session-initiate' and should send
@@ -735,16 +496,8 @@ export default class JingleSessionPC extends JingleSession {
      * @param failure function(error) called if for any reason we fail to accept
      * the incoming offer. 'error' argument can be used to log some details
      * about the error.
-     * @param {Array<JitsiLocalTrack>} [localTracks] the optional list of
-     * the local tracks that will be added, before the offer/answer cycle
-     * executes. We allow the localTracks to optionally be passed in so that
-     * the addition of the local tracks and the processing of the initial offer
-     * can all be done atomically. We want to make sure that any other
-     * operations which originate in the XMPP Jingle messages related with
-     * this session to be executed with an assumption that the initial
-     * offer/answer cycle has been executed already.
      */
-    acceptOffer(jingleOffer, success, failure, localTracks) {
+    acceptOffer(jingleOffer, success, failure) {
         this.setOfferAnswerCycle(
             jingleOffer,
             () => {
@@ -753,88 +506,9 @@ export default class JingleSessionPC extends JingleSession {
                 // modify sendSessionAccept method to do that
                 this.sendSessionAccept(success, failure);
             },
-            failure,
-            localTracks);
+            failure);
     }
-
-    /* eslint-enable max-params */
-
-    /**
-     * Creates an offer and sends Jingle 'session-initiate' to the remote peer.
-     * @param {Array<JitsiLocalTrack>} localTracks the local tracks that will be
-     * added, before the offer/answer cycle executes (for the local track
-     * addition to be an atomic operation together with the offer/answer).
-     */
-    invite(localTracks = []) {
-        if (!this.isInitiator) {
-            throw new Error('Trying to invite from the responder session');
-        }
-        const workFunction = finishedCallback => {
-            const addTracks = [];
-
-            for (const localTrack of localTracks) {
-                addTracks.push(this.peerconnection.addTrack(localTrack, this.isInitiator));
-            }
-
-            Promise.all(addTracks)
-                .then(() => this.peerconnection.createOffer(this.mediaConstraints))
-                .then(offerSdp => this.peerconnection.setLocalDescription(offerSdp))
-                .then(() => {
-                    // NOTE that the offer is obtained from the localDescription getter as it needs to go though
-                    // the transformation chain.
-                    this.sendSessionInitiate(this.peerconnection.localDescription.sdp);
-                })
-                .then(() => finishedCallback(), error => finishedCallback(error));
-        };
-
-        logger.debug(`${this} Queued invite task`);
-        this.modificationQueue.push(
-            workFunction,
-            error => {
-                if (error) {
-                    logger.error(`${this} invite error`, error);
-                } else {
-                    logger.debug(`${this} invite executed - OK`);
-                }
-            });
-    }
-
-    /**
-     * Sends 'session-initiate' to the remote peer.
-     *
-     * NOTE this method is synchronous and we're not waiting for the RESULT
-     * response which would delay the startup process.
-     *
-     * @param {string} offerSdp  - The local session description which will be
-     * used to generate an offer.
-     * @private
-     */
-    sendSessionInitiate(offerSdp) {
-        let init = $iq({
-            to: this.remoteJid,
-            type: 'set'
-        }).c('jingle', {
-            xmlns: 'urn:xmpp:jingle:1',
-            action: 'session-initiate',
-            initiator: this.initiatorJid,
-            sid: this.sid
-        });
-
-        new SDP(offerSdp).toJingle(
-            init,
-            this.isInitiator ? 'initiator' : 'responder');
-        init = init.tree();
-        logger.info(`${this} Session-initiate: `, init);
-        this.connection.sendIQ(init,
-            () => {
-                logger.info(`${this} Got RESULT for "session-initiate"`);
-            },
-            error => {
-                logger.error(`${this} "session-initiate" error`, error);
-            },
-            IQ_TIMEOUT);
-    }
-
+  
     /**
      * Sets the answer received from the remote peer.
      * @param jingleAnswer
@@ -843,12 +517,7 @@ export default class JingleSessionPC extends JingleSession {
         if (!this.isInitiator) {
             throw new Error('Trying to set an answer on the responder session');
         }
-        this.setOfferAnswerCycle(
-            jingleAnswer,
-            () => {
-            },
-            error => {
-            });
+        this.setOfferAnswerCycle(jingleAnswer,() => {},error => {});
     }
 
     /* eslint-disable max-params */
@@ -861,23 +530,13 @@ export default class JingleSessionPC extends JingleSession {
      * @param success callback called when sRD/sLD cycle finishes successfully.
      * @param failure callback called with an error object as an argument if we
      *        fail at any point during setRD, createAnswer, setLD.
-     * @param {Array<JitsiLocalTrack>} [localTracks] the optional list of
-     * the local tracks that will be added, before the offer/answer cycle
-     * executes (for the local track addition to be an atomic operation together
-     * with the offer/answer).
      */
-    setOfferAnswerCycle(jingleOfferAnswerIq, success, failure, localTracks = []) {
+    setOfferAnswerCycle(jingleOfferAnswerIq, success, failure) {
         const workFunction = finishedCallback => {
             const addTracks = [];
 
-            for (const track of localTracks) {
-                addTracks.push(this.peerconnection.addTrack(track, this.isInitiator));
-            }
-
             const newRemoteSdp
                 = this._processNewJingleOfferIq(jingleOfferAnswerIq);
-            const oldLocalSdp
-                = this.peerconnection.localDescription.sdp;
 
             const bridgeSession
                 = $(jingleOfferAnswerIq)
@@ -894,24 +553,6 @@ export default class JingleSessionPC extends JingleSession {
                 .then(() => {
                     if (this.state === JingleSessionState.PENDING) {
                         this.state = JingleSessionState.ACTIVE;
-
-                        // #1 Sync up video transfer active/inactive only after
-                        // the initial O/A cycle. We want to adjust the video
-                        // media direction only in the local SDP and the Jingle
-                        // contents direction included in the initial
-                        // offer/answer is mapped to the remote SDP. Jingle
-                        // 'content-modify' IQ is processed in a way that it
-                        // will only modify local SDP when remote peer is no
-                        // longer interested in receiving video content.
-                        // Changing media direction in the remote SDP will mess
-                        // up our SDP translation chain (simulcast, video mute,
-                        // RTX etc.)
-                        //
-                        // #2 Sends the max frame height if it was set, before the session-initiate/accept
-                        if (this.isP2P
-                            && (!this._localVideoActive || this.localRecvMaxFrameHeight)) {
-                            this.sendContentModify();
-                        }
                     }
                 })
                 .then(() => finishedCallback(), error => finishedCallback(error));
@@ -926,34 +567,6 @@ export default class JingleSessionPC extends JingleSession {
                     success();
                 }
             });
-    }
-
-    /**
-     * Updates the codecs on the peerconnection and initiates a renegotiation for the
-     * new codec config to take effect.
-     *
-     * @param {CodecMimeType} preferred the preferred codec.
-     * @param {CodecMimeType} disabled the codec that needs to be disabled.
-     */
-    setVideoCodecs(preferred = null, disabled = null) {
-        const current = this.peerconnection.getConfiguredVideoCodec();
-
-        if (this._assertNotEnded() && preferred !== current) {
-            logger.info(`${this} Switching video codec from ${current} to ${preferred}`);
-            this.peerconnection.setVideoCodecs(preferred, disabled);
-
-            // Initiate a renegotiate for the codec setting to take effect.
-            const workFunction = finishedCallback => {
-                this._renegotiate().then(
-                    () => {
-                        return finishedCallback();
-                    }, error => {
-                        return finishedCallback(error);
-                    });
-            };
-            // Queue and execute
-            this.modificationQueue.push(workFunction);
-        }
     }
 
     /**
@@ -995,7 +608,6 @@ export default class JingleSessionPC extends JingleSession {
 
         // Calling tree() to print something useful
         accept = accept.tree();
-        logger.info(`${this} Sending session-accept`, accept);
         this.connection.sendIQ(accept,
             success,
             this.newJingleErrorHandler(accept, error => {
@@ -1027,104 +639,6 @@ export default class JingleSessionPC extends JingleSession {
         // 'session-accept' and any immediate requests).
         //
         // this.connection.flush();
-    }
-
-    /**
-     * Will send 'content-modify' IQ in order to ask the remote peer to
-     * either stop or resume sending video media or to adjust sender's video constraints.
-     * @private
-     */
-    sendContentModify() {
-        const maxFrameHeight = this.localRecvMaxFrameHeight;
-        const senders = this._localVideoActive ? 'both' : 'none';
-
-        let sessionModify
-            = $iq({
-                to: this.remoteJid,
-                type: 'set'
-            })
-                .c('jingle', {
-                    xmlns: 'urn:xmpp:jingle:1',
-                    action: 'content-modify',
-                    initiator: this.initiatorJid,
-                    sid: this.sid
-                })
-                .c('content', {
-                    name: 'video',
-                    senders
-                });
-
-        if (typeof maxFrameHeight !== 'undefined') {
-            sessionModify = sessionModify
-                .c('max-frame-height', { xmlns: 'http://jitsi.org/jitmeet/video' })
-                .t(maxFrameHeight);
-        }
-
-        logger.info(`${this} sending content-modify, video senders: ${senders}, max frame height: ${maxFrameHeight}`);
-
-        this.connection.sendIQ(
-            sessionModify,
-            null,
-            this.newJingleErrorHandler(sessionModify),
-            IQ_TIMEOUT);
-    }
-
-    /**
-     * Adjust the preference for max video frame height that the local party is willing to receive. Signals
-     * the remote party.
-     *
-     * @param {Number} maxFrameHeight - the new value to set.
-     */
-    setReceiverVideoConstraint(maxFrameHeight) {
-        logger.info(`${this} setReceiverVideoConstraint - max frame height: ${maxFrameHeight}`);
-
-        this.localRecvMaxFrameHeight = maxFrameHeight;
-
-        if (this.isP2P) {
-            // Tell the remote peer about our receive constraint. If Jingle session is not yet active the state will
-            // be synced after offer/answer.
-            if (this.state === JingleSessionState.ACTIVE) {
-                this.sendContentModify();
-            }
-        } else {
-            this.rtc.setReceiverVideoConstraint(maxFrameHeight);
-        }
-    }
-    /**
-     * Sets the resolution constraint on the local camera track.
-     * @param {number} maxFrameHeight - The user preferred max frame height.
-     * @returns {Promise} promise that will be resolved when the operation is
-     * successful and rejected otherwise.
-     */
-    setSenderVideoConstraint(maxFrameHeight) {
-        if (this._assertNotEnded()) {
-            return this.peerconnection.setSenderVideoConstraint(maxFrameHeight);
-        }
-        return Promise.resolve();
-    }
-
-    /**
-     * Sets the degradation preference on the video sender. This setting determines if
-     * resolution or framerate will be preferred when bandwidth or cpu is constrained.
-     * @returns {Promise<void>} promise that will be resolved when the operation is
-     * successful and rejected otherwise.
-     */
-    setSenderVideoDegradationPreference() {
-        if (this._assertNotEnded()) {
-            return this.peerconnection.setSenderVideoDegradationPreference();
-        }
-
-        return Promise.resolve();
-    }
-    /**
-     * Handles XMPP connection state changes.
-     *
-     * @param {XmppConnection.Status} status - The new status.
-     */
-    onXmppStatusChanged(status) {
-        if (status === XmppConnection.Status.CONNECTED && this._cachedOldLocalSdp) {
-            logger.info(`${this} Sending SSRC update on reconnect`);
-        }
     }
 
     /**
@@ -1163,20 +677,15 @@ export default class JingleSessionPC extends JingleSession {
     _renegotiate(optionalRemoteSdp) {
         if (this.peerconnection.signalingState === 'closed') {
             const error = new Error('Attempted to renegotiate in state closed');
-
             this.room.eventEmitter.emit(XMPPEvents.RENEGOTIATION_FAILED, error, this);
-
             return Promise.reject(error);
         }
 
-        const remoteSdp
-            = optionalRemoteSdp || this.peerconnection.remoteDescription.sdp;
+        const remoteSdp = optionalRemoteSdp || this.peerconnection.remoteDescription.sdp;
 
         if (!remoteSdp) {
             const error = new Error(`Can not renegotiate without remote description, current state: ${this.state}`);
-
             this.room.eventEmitter.emit(XMPPEvents.RENEGOTIATION_FAILED, error, this);
-
             return Promise.reject(error);
         }
 
@@ -1199,16 +708,10 @@ export default class JingleSessionPC extends JingleSession {
      * @private
      */
     _responderRenegotiate(remoteDescription) {
-        logger.debug(`${this} Renegotiate: setting remote description`);
-
         return this.peerconnection.setRemoteDescription(remoteDescription)
             .then(() => {
-                logger.debug(`${this} Renegotiate: creating answer`);
-
                 return this.peerconnection.createAnswer(this.mediaConstraints)
                     .then(answer => {
-                        logger.debug(`${this} Renegotiate: setting local description`);
-
                         return this.peerconnection.setLocalDescription(answer);
                     });
             });
@@ -1221,17 +724,10 @@ export default class JingleSessionPC extends JingleSession {
      * @private
      */
     _initiatorRenegotiate(remoteDescription) {
-        logger.debug(`${this} Renegotiate: creating offer`);
-
         return this.peerconnection.createOffer(this.mediaConstraints)
             .then(offer => {
-                logger.debug(`${this} Renegotiate: setting local description`);
-
                 return this.peerconnection.setLocalDescription(offer)
                     .then(() => {
-                        logger.debug(`${this} Renegotiate: setting remote description`);
-
-                        // eslint-disable-next-line max-len
                         return this.peerconnection.setRemoteDescription(remoteDescription);
                     });
             });
@@ -1251,51 +747,10 @@ export default class JingleSessionPC extends JingleSession {
      */
     replaceTrack(oldTrack, newTrack) {
         const workFunction = finishedCallback => {
-            logger.debug(`${this} replaceTrack worker started. oldTrack = ${oldTrack}, newTrack = ${newTrack}`);
-
-            const oldLocalSdp = this.peerconnection.localDescription.sdp;
-
-            if (!this.usesUnifiedPlan) {
-                // NOTE the code below assumes that no more than 1 video track
-                // can be added to the peer connection.
-                // Transition from camera to desktop share
-                // or transition from one camera source to another.
-                if (this.peerconnection.options.capScreenshareBitrate
-                    && oldTrack && newTrack && newTrack.isVideoTrack()) {
-                    // Clearing current primary SSRC will make
-                    // the SdpConsistency generate a new one which will result
-                    // with:
-                    // 1. source-remove for the old video stream.
-                    // 2. source-add for the new video stream.
-                    this.peerconnection.clearRecvonlySsrc();
-                }
-
-                // Transition from no video to video (unmute).
-                if (!oldTrack && newTrack && newTrack.isVideoTrack()) {
-                    // Clearing current primary SSRC will make
-                    // the SdpConsistency generate a new one which will result
-                    // with:
-                    // 1. source-remove for the recvonly
-                    // 2. source-add for the new video stream
-                    this.peerconnection.clearRecvonlySsrc();
-
-                    // Transition from video to no video
-                } else if (oldTrack && oldTrack.isVideoTrack() && !newTrack) {
-                    // Clearing current primary SSRC and generating the recvonly
-                    // will result in:
-                    // 1. source-remove for the old video stream
-                    // 2. source-add for the recvonly stream
-                    this.peerconnection.clearRecvonlySsrc();
-                    this.peerconnection.generateRecvonlySsrc();
-                }
-            }
 
             this.peerconnection.replaceTrack(oldTrack, newTrack)
                 .then(shouldRenegotiate => {
                     let promise = Promise.resolve();
-
-                    logger.debug(`${this} TPC.replaceTrack finished. shouldRenegotiate = ${shouldRenegotiate}, JingleSessionState = ${this.state}`);
-
                     if (shouldRenegotiate
                         && (oldTrack || newTrack)
                         && this.state === JingleSessionState.ACTIVE) {
@@ -1306,8 +761,6 @@ export default class JingleSessionPC extends JingleSession {
 
                     return promise.then(() => {
                         if (newTrack && newTrack.isVideoTrack()) {
-                            logger.debug(`${this} replaceTrack worker: configuring video stream`);
-
                             // FIXME set all sender parameters in one go?
                             // Set the degradation preference on the new video sender.
                             return this.peerconnection.setSenderVideoDegradationPreference()
@@ -1320,16 +773,12 @@ export default class JingleSessionPC extends JingleSession {
         };
 
         return new Promise((resolve, reject) => {
-            logger.debug(`${this} Queued replaceTrack task. Old track = ${oldTrack}, new track = ${newTrack}`);
-
             this.modificationQueue.push(
                 workFunction,
                 error => {
                     if (error) {
-                        logger.error(`${this} Replace track error:`, error);
                         reject(error);
                     } else {
-                        logger.info(`${this}  Replace track done!`);
                         resolve();
                     }
                 });
@@ -1392,11 +841,6 @@ export default class JingleSessionPC extends JingleSession {
                 // it will first send us 'session-terminate' (we enter ENDED)
                 // and then follow with 'item-not-found' for the queued requests
                 // We don't want to have that logged on error level.
-                logger.debug(`${this} Jingle error: ${JSON.stringify(error)}`);
-            } else {
-                GlobalOnErrorHandler.callErrorHandler(
-                    new Error(
-                        `Jingle error: ${JSON.stringify(error)}`));
             }
         };
     }

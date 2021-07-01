@@ -1,5 +1,3 @@
-import { getLogger } from 'jitsi-meet-logger';
-
 import RTCEvents from '../../service/RTC/RTCEvents';
 import XMPPEvents from '../../service/xmpp/XMPPEvents';
 import RTC from '../RTC/RTC';
@@ -7,8 +5,6 @@ import JingleSessionPC from '../xmpp/JingleSessionPC';
 import { DEFAULT_STUN_SERVERS } from '../xmpp/xmpp';
 
 import { ACTIONS } from './constants';
-
-const logger = getLogger(__filename);
 
 /**
  * An adapter around {@code JingleSessionPC} so its logic can be re-used without
@@ -329,8 +325,6 @@ export default class ProxyConnectionPC {
      */
     _onSessionAccept($jingle) {
         if (!this._peerConnection) {
-            logger.error('Received an answer when no peer connection exists.');
-
             return;
         }
 
@@ -347,8 +341,6 @@ export default class ProxyConnectionPC {
      */
     _onSessionInitiate($jingle) {
         if (this._peerConnection) {
-            logger.error('Received an offer when an offer was already sent.');
-
             return;
         }
 

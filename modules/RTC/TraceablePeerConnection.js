@@ -30,10 +30,6 @@ const SD_BITRATE = 700000;
  * @param {object} constraints WebRTC 'PeerConnection' constraints
  * @param {boolean} isP2P indicates whether or not the new instance will be used in a peer to peer connection.
  * @param {object} options <tt>TracablePeerConnection</tt> config options.
- * @param {boolean} options.disableRtx if set to 'true' will disable the RTX.
- * @param {string} options.disabledCodec the mime type of the code that should not be negotiated on the peerconnection.
- * @param {string} options.preferredCodec the mime type of the codec that needs to be made the preferred codec for the
- * peerconnection.
  * @param {boolean} options.startSilent If set to 'true' no audio will be sent or received.
  * @param {boolean} options.usesUnifiedPlan Indicates if the  browser is running in unified plan mode.
  *
