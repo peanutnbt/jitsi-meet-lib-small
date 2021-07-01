@@ -6,7 +6,7 @@ import * as JitsiTrackEvents from '../../JitsiTrackEvents';
 import * as MediaType from '../../service/RTC/MediaType';
 import browser from '../browser';
 
-import RTCUtils from './RTCUtils';
+import RTC from './RTC';
 
 const logger = getLogger(__filename);
 
@@ -307,7 +307,7 @@ export default class JitsiTrack extends EventEmitter {
     attach(container) {
         if (this.stream) {
             this._onTrackAttach(container);
-            RTCUtils.attachMediaStream(container, this.stream);
+            RTC.attachMediaStream(container, this.stream);
         }
         this.containers.push(container);
         this._maybeFireTrackAttached(container);
@@ -328,7 +328,7 @@ export default class JitsiTrack extends EventEmitter {
 
             if (!container) {
                 this._onTrackDetach(c);
-                RTCUtils.attachMediaStream(c, null);
+                RTC.attachMediaStream(c, null);
             }
             if (!container || c === container) {
                 cs.splice(i, 1);
@@ -337,7 +337,7 @@ export default class JitsiTrack extends EventEmitter {
 
         if (container) {
             this._onTrackDetach(container);
-            RTCUtils.attachMediaStream(container, null);
+            RTC.attachMediaStream(container, null);
         }
     }
 
@@ -402,7 +402,8 @@ export default class JitsiTrack extends EventEmitter {
      */
     getId() {
         if (this.stream) {
-            return RTCUtils.getStreamID(this.stream);
+            // return RTC.getStreamID(this.stream);
+            return this.stream.id;
         }
 
         return null;
@@ -480,7 +481,7 @@ export default class JitsiTrack extends EventEmitter {
      * @returns {Promise}
      */
     setAudioOutput(audioOutputDeviceId) {
-        if (!RTCUtils.isDeviceChangeAvailable('output')) {
+        if (!RTC.isDeviceChangeAvailable('output')) {
             return Promise.reject(
                 new Error('Audio output device change is not supported'));
         }

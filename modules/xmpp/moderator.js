@@ -46,49 +46,15 @@ function createExpBackoffTimer(step) {
  * @param options
  */
 export default function Moderator(roomName, xmpp, emitter, options) {
+    console.log("----------New Moderator----------")
+
     this.roomName = roomName;
     this.xmppService = xmpp;
-    this.getNextTimeout = createExpBackoffTimer(1000);
-    this.getNextErrorTimeout = createExpBackoffTimer(1000);
 
-    // External authentication stuff
-    this.externalAuthEnabled = false;
     this.options = options;
-
-    // Whether SIP gateway (jigasi) support is enabled. This is set
-    // based on conference properties received in presence.
-    this.sipGatewayEnabled = false;
-
     this.eventEmitter = emitter;
 
     this.connection = this.xmppService.connection;
-
-    // FIXME: Message listener that talks to POPUP window
-    /**
-     *
-     * @param event
-     */
-    function listener(event) {
-        if (event.data && event.data.sessionId) {
-            if (event.origin !== window.location.origin) {
-                logger.warn(
-                    `Ignoring sessionId from different origin: ${
-                        event.origin}`);
-
-                return;
-            }
-            Settings.sessionId = event.data.sessionId;
-
-            // After popup is closed we will authenticate
-        }
-    }
-
-    // Register
-    if (window.addEventListener) {
-        window.addEventListener('message', listener, false);
-    } else {
-        window.attachEvent('onmessage', listener);
-    }
 }
 
 /* eslint-enable max-params */
@@ -115,7 +81,6 @@ Moderator.prototype.onMucMemberLeft = function(jid) {
 Moderator.prototype.setFocusUserJid = function(focusJid) {
     if (!this.focusUserJid) {
         this.focusUserJid = focusJid;
-        logger.info(`Focus jid set to:  ${this.focusUserJid}`);
     }
 };
 
@@ -164,42 +129,6 @@ Moderator.prototype.createConferenceIq = function() {
             value: Boolean(config.disableRtx)
         }).up();
 
-    if (config.audioPacketDelay !== undefined) {
-        elem.c(
-            'property', {
-                name: 'audioPacketDelay',
-                value: config.audioPacketDelay
-            }).up();
-    }
-    if (config.startBitrate) {
-        elem.c(
-            'property', {
-                name: 'startBitrate',
-                value: config.startBitrate
-            }).up();
-    }
-    if (config.minBitrate) {
-        elem.c(
-            'property', {
-                name: 'minBitrate',
-                value: config.minBitrate
-            }).up();
-    }
-
-    if (this.options.conference.startAudioMuted !== undefined) {
-        elem.c(
-            'property', {
-                name: 'startAudioMuted',
-                value: this.options.conference.startAudioMuted
-            }).up();
-    }
-    if (this.options.conference.startVideoMuted !== undefined) {
-        elem.c(
-            'property', {
-                name: 'startVideoMuted',
-                value: this.options.conference.startVideoMuted
-            }).up();
-    }
     elem.up();
 
     return elem;
@@ -267,20 +196,17 @@ Moderator.prototype.parseConfigOptions = function(resultIq) {
  */
 Moderator.prototype.allocateConferenceFocus = function() {
     return new Promise(resolve => {
-        // Try to use focus user JID from the config
-        this.setFocusUserJid(this.options.connection.focusUserJid);
-
         // Send create conference IQ
+        console.log("----------Send create conference IQ---------")
         this.connection.sendIQ(
             this.createConferenceIq(),
-            result => this._allocateConferenceFocusSuccess(result, resolve),
-            error => this._allocateConferenceFocusError(error, resolve));
+            result => this._allocateConferenceFocusSuccess(result, resolve));
 
         // XXX We're pressed for time here because we're beginning a complex
         // and/or lengthy conference-establishment process which supposedly
         // involves multiple RTTs. We don't have the time to wait for Strophe to
         // decide to send our IQ.
-        this.connection.flush();
+        // this.connection.flush();
     });
 };
 
@@ -294,81 +220,57 @@ Moderator.prototype.allocateConferenceFocus = function() {
  * successful allocation of the conference focus
  */
 Moderator.prototype._allocateConferenceFocusError = function(error, callback) {
-    // If the session is invalid, remove and try again without session ID to get
-    // a new one
-    const invalidSession
-        = $(error).find('>error>session-invalid').length
-            || $(error).find('>error>not-acceptable').length;
+    // // If the session is invalid, remove and try again without session ID to get
+    // // a new one
+    // const invalidSession
+    //     = $(error).find('>error>session-invalid').length
+    //         || $(error).find('>error>not-acceptable').length;
 
-    if (invalidSession) {
-        logger.info('Session expired! - removing');
-        Settings.sessionId = undefined;
-    }
-    if ($(error).find('>error>graceful-shutdown').length) {
-        this.eventEmitter.emit(XMPPEvents.GRACEFUL_SHUTDOWN);
+    // if (invalidSession) {
+    //     logger.info('Session expired! - removing');
+    //     Settings.sessionId = undefined;
+    // }
+    // if ($(error).find('>error>graceful-shutdown').length) {
+    //     this.eventEmitter.emit(XMPPEvents.GRACEFUL_SHUTDOWN);
 
-        return;
-    }
+    //     return;
+    // }
 
-    // Check for error returned by the reservation system
-    const reservationErr = $(error).find('>error>reservation-error');
+    // // Check for error returned by the reservation system
+    // const reservationErr = $(error).find('>error>reservation-error');
 
-    if (reservationErr.length) {
-        // Trigger error event
-        const errorCode = reservationErr.attr('error-code');
-        const errorTextNode = $(error).find('>error>text');
-        let errorMsg;
+    // if (reservationErr.length) {
+    //     // Trigger error event
+    //     const errorCode = reservationErr.attr('error-code');
+    //     const errorTextNode = $(error).find('>error>text');
+    //     let errorMsg;
 
-        if (errorTextNode) {
-            errorMsg = errorTextNode.text();
-        }
-        this.eventEmitter.emit(
-            XMPPEvents.RESERVATION_ERROR,
-            errorCode,
-            errorMsg);
+    //     if (errorTextNode) {
+    //         errorMsg = errorTextNode.text();
+    //     }
+    //     this.eventEmitter.emit(
+    //         XMPPEvents.RESERVATION_ERROR,
+    //         errorCode,
+    //         errorMsg);
 
-        return;
-    }
+    //     return;
+    // }
 
-    // Not authorized to create new room
-    if ($(error).find('>error>not-authorized').length) {
-        logger.warn('Unauthorized to start the conference', error);
-        const toDomain = Strophe.getDomainFromJid(error.getAttribute('to'));
+    // // Not authorized to create new room
+    // if ($(error).find('>error>not-authorized').length) {
+    //     logger.warn('Unauthorized to start the conference', error);
+    //     const toDomain = Strophe.getDomainFromJid(error.getAttribute('to'));
 
-        if (toDomain !== this.options.connection.hosts.anonymousdomain) {
-            // FIXME "is external" should come either from the focus or
-            // config.js
-            this.externalAuthEnabled = true;
-        }
-        this.eventEmitter.emit(XMPPEvents.AUTHENTICATION_REQUIRED);
+    //     if (toDomain !== this.options.connection.hosts.anonymousdomain) {
+    //         // FIXME "is external" should come either from the focus or
+    //         // config.js
+    //         this.externalAuthEnabled = true;
+    //     }
+    //     this.eventEmitter.emit(XMPPEvents.AUTHENTICATION_REQUIRED);
 
-        return;
-    }
-    const waitMs = this.getNextErrorTimeout();
-    const errmsg = `Focus error, retry after ${waitMs}`;
+    //     return;
+    // }
 
-    GlobalOnErrorHandler.callErrorHandler(new Error(errmsg));
-    logger.error(errmsg, error);
-
-    // Show message
-    const focusComponent = this.getFocusComponent();
-    const retrySec = waitMs / 1000;
-
-    // FIXME: message is duplicated ? Do not show in case of session invalid
-    // which means just a retry
-
-    if (!invalidSession) {
-        this.eventEmitter.emit(
-            XMPPEvents.FOCUS_DISCONNECTED,
-            focusComponent,
-            retrySec);
-    }
-
-    // Reset response timeout
-    this.getNextTimeout(true);
-    window.setTimeout(
-        () => this.allocateConferenceFocus().then(callback),
-        waitMs);
 };
 
 /**
@@ -387,23 +289,14 @@ Moderator.prototype._allocateConferenceFocusSuccess = function(
     this.parseConfigOptions(result);
 
     // Reset the error timeout (because we haven't failed here).
-    this.getNextErrorTimeout(true);
 
     // eslint-disable-next-line newline-per-chained-call
     if ($(result).find('conference').attr('ready') === 'true') {
         // Reset the non-error timeout (because we've succeeded here).
-        this.getNextTimeout(true);
-
         // Exec callback
+        console.log("----------Send Conference IQ success----------")
         callback();
-    } else {
-        const waitMs = this.getNextTimeout();
-
-        logger.info(`Waiting for the focus... ${waitMs}`);
-        window.setTimeout(
-            () => this.allocateConferenceFocus().then(callback),
-            waitMs);
-    }
+    } 
 };
 
 Moderator.prototype.authenticate = function() {

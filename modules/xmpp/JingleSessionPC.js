@@ -130,14 +130,14 @@ export default class JingleSessionPC extends JingleSession {
      * @implements {SignalingLayer}
      */
     constructor(
-            sid,
-            localJid,
-            remoteJid,
-            connection,
-            mediaConstraints,
-            iceConfig,
-            isP2P,
-            isInitiator) {
+        sid,
+        localJid,
+        remoteJid,
+        connection,
+        mediaConstraints,
+        iceConfig,
+        isP2P,
+        isInitiator) {
         super(
             sid,
             localJid,
@@ -155,7 +155,6 @@ export default class JingleSessionPC extends JingleSession {
         this._bridgeSessionId = null;
 
         /**
-         * The oldest SDP passed to {@link notifyMySSRCUpdate} while the XMPP connection was offline that will be
          * used to update Jicofo once the XMPP connection goes back online.
          * @type {SDP|undefined}
          * @private
@@ -163,7 +162,6 @@ export default class JingleSessionPC extends JingleSession {
         this._cachedOldLocalSdp = undefined;
 
         /**
-         * The latest SDP passed to {@link notifyMySSRCUpdate} while the XMPP connection was offline that will be
          * used to update Jicofo once the XMPP connection goes back online.
          * @type {SDP|undefined}
          * @private
@@ -306,76 +304,45 @@ export default class JingleSessionPC extends JingleSession {
      * @param {JingleSessionPCOptions} options  - a set of config options.
      */
     doInitialize(options) {
+        console.log("----------Jingle Session doInitialize-----------")
+
         this.failICE = Boolean(options.failICE);
         this.lasticecandidate = false;
         this.options = options;
 
-        /**
-         * {@code true} if reconnect is in progress.
-         * @type {boolean}
-         */
         this.isReconnect = false;
 
-        /**
-         * Set to {@code true} if the connection was ever stable
-         * @type {boolean}
-         */
         this.wasstable = false;
         this.webrtcIceUdpDisable = Boolean(options.webrtcIceUdpDisable);
         this.webrtcIceTcpDisable = Boolean(options.webrtcIceTcpDisable);
 
         const pcOptions = { disableRtx: options.disableRtx };
 
-        if (options.gatherStats) {
-            pcOptions.maxstats = DEFAULT_MAX_STATS;
-        }
         pcOptions.capScreenshareBitrate = false;
         pcOptions.enableInsertableStreams = options.enableInsertableStreams;
         pcOptions.videoQuality = options.videoQuality;
         pcOptions.forceTurnRelay = options.forceTurnRelay;
         pcOptions.audioQuality = options.audioQuality;
-        pcOptions.usesUnifiedPlan = this.usesUnifiedPlan
-            = browser.supportsUnifiedPlan()
-                && (browser.isFirefox()
-                    || browser.isWebKitBased()
-                    || (!this.isP2P && browser.isChromiumBased() && options.enableUnifiedOnChrome));
+        pcOptions.usesUnifiedPlan = true
 
-        if (this.isP2P) {
-            // simulcast needs to be disabled for P2P (121) calls
-            pcOptions.disableSimulcast = true;
-            const abtestSuspendVideo = this._abtestSuspendVideoEnabled(options);
+        // H264 does not support simulcast, so it needs to be disabled.
+        pcOptions.disableSimulcast
+            = options.disableSimulcast
+            || (options.preferH264 && !options.disableH264)
+            || (options.videoQuality && options.videoQuality.preferredCodec === CodecMimeType.H264);
 
-            if (typeof abtestSuspendVideo !== 'undefined') {
-                pcOptions.abtestSuspendVideo = abtestSuspendVideo;
-            }
-        } else {
-            // H264 does not support simulcast, so it needs to be disabled.
-            pcOptions.disableSimulcast
-                = options.disableSimulcast
-                    || (options.preferH264 && !options.disableH264)
-                    || (options.videoQuality && options.videoQuality.preferredCodec === CodecMimeType.H264);
-
-            // Disable simulcast for low fps screenshare and enable it for high fps screenshare.
-            // testing.capScreenshareBitrate config.js setting has now been deprecated.
-            pcOptions.capScreenshareBitrate = pcOptions.disableSimulcast
-                || !(typeof options.desktopSharingFrameRate?.max === 'number'
-                    && options.desktopSharingFrameRate?.max > SS_DEFAULT_FRAME_RATE);
-
-            // add the capScreenshareBitrate to the permanent properties so that it's included with every event that we
-            // send to the analytics backend.
-            Statistics.analytics.addPermanentProperties({ capScreenshareBitrate: pcOptions.capScreenshareBitrate });
-        }
-
-        if (options.startSilent) {
-            pcOptions.startSilent = true;
-        }
+        // Disable simulcast for low fps screenshare and enable it for high fps screenshare.
+        // testing.capScreenshareBitrate config.js setting has now been deprecated.
+        pcOptions.capScreenshareBitrate = pcOptions.disableSimulcast
+            || !(typeof options.desktopSharingFrameRate?.max === 'number'
+                && options.desktopSharingFrameRate?.max > SS_DEFAULT_FRAME_RATE);
 
         this.peerconnection
             = this.rtc.createPeerConnection(
-                    this.signalingLayer,
-                    this.iceConfig,
-                    this.isP2P,
-                    pcOptions);
+                this.signalingLayer,
+                this.iceConfig,
+                this.isP2P,
+                pcOptions);
 
         this.peerconnection.onicecandidate = ev => {
             if (!ev) {
@@ -412,15 +379,6 @@ export default class JingleSessionPC extends JingleSession {
                     }
                 }
             } else if (!this._gatheringReported) {
-                // End of gathering
-                Statistics.sendAnalytics(
-                    ICE_DURATION,
-                    {
-                        phase: 'gathering',
-                        value: now - this._gatheringStartedTimestamp,
-                        p2p: this.isP2P,
-                        initiator: this.isInitiator
-                    });
                 this._gatheringReported = true;
             }
             this.sendIceCandidate(candidate);
@@ -452,144 +410,58 @@ export default class JingleSessionPC extends JingleSession {
             const now = window.performance.now();
             let isStable = false;
 
-            if (!this.isP2P) {
-                this.room.connectionTimes[
-                    `ice.state.${this.peerconnection.iceConnectionState}`]
-                    = now;
-            }
-            logger.log(`(TIME) ICE ${this.peerconnection.iceConnectionState} ${this.isP2P ? 'P2P' : 'JVB'}:\t`, now);
-
-            Statistics.sendAnalytics(
-                ICE_STATE_CHANGED,
-                {
-                    p2p: this.isP2P,
-                    state: this.peerconnection.iceConnectionState,
-                    'signaling_state': this.peerconnection.signalingState,
-                    reconnect: this.isReconnect,
-                    value: now
-                });
-
             this.room.eventEmitter.emit(
                 XMPPEvents.ICE_CONNECTION_STATE_CHANGED,
                 this,
                 this.peerconnection.iceConnectionState);
             switch (this.peerconnection.iceConnectionState) {
-            case 'checking':
-                this._iceCheckingStartedTimestamp = now;
-                break;
-            case 'connected':
-                // Informs interested parties that the connection has been restored. This includes the case when
-                // media connection to the bridge has been restored after an ICE failure by using session-terminate.
-                if (this.peerconnection.signalingState === 'stable') {
-                    isStable = true;
-                    const usesTerminateForRestart = !this.options.enableIceRestart
-                        && this.room.supportsRestartByTerminate();
+                case 'checking':
+                    this._iceCheckingStartedTimestamp = now;
+                    break;
+                case 'connected':
+                    // Informs interested parties that the connection has been restored. This includes the case when
+                    // media connection to the bridge has been restored after an ICE failure by using session-terminate.
+                    if (this.peerconnection.signalingState === 'stable') {
+                        isStable = true;
+                        const usesTerminateForRestart = !this.options.enableIceRestart
 
-                    if (this.isReconnect || usesTerminateForRestart) {
-                        this.room.eventEmitter.emit(
-                            XMPPEvents.CONNECTION_RESTORED, this);
-                    }
-                }
-
-                // Add a workaround for an issue on chrome in Unified plan when the local endpoint is the offerer.
-                // The 'signalingstatechange' event for 'stable' is handled after the 'iceconnectionstatechange' event
-                // for 'completed' is handled by the client. This prevents the client from firing a
-                // CONNECTION_ESTABLISHED event for the p2p session. As a result, the offerer continues to stay on the
-                // jvb connection while the remote peer switches to the p2p connection breaking the media flow between
-                // the endpoints.
-                // TODO - file a chromium bug and add the information here.
-                if (!this.wasConnected
-                    && (this.wasstable
-                        || isStable
-                        || (this.usesUnifiedPlan && this.isInitiator && browser.isChromiumBased()))) {
-
-                    Statistics.sendAnalytics(
-                        ICE_DURATION,
-                        {
-                            phase: 'checking',
-                            value: now - this._iceCheckingStartedTimestamp,
-                            p2p: this.isP2P,
-                            initiator: this.isInitiator
-                        });
-
-                    // Switch between ICE gathering and ICE checking whichever
-                    // started first (scenarios are different for initiator
-                    // vs responder)
-                    const iceStarted
-                        = Math.min(
-                            this._iceCheckingStartedTimestamp,
-                            this._gatheringStartedTimestamp);
-
-                    this.establishmentDuration = now - iceStarted;
-
-                    Statistics.sendAnalytics(
-                        ICE_DURATION,
-                        {
-                            phase: 'establishment',
-                            value: this.establishmentDuration,
-                            p2p: this.isP2P,
-                            initiator: this.isInitiator
-                        });
-
-                    this.wasConnected = true;
-                    this.room.eventEmitter.emit(
-                        XMPPEvents.CONNECTION_ESTABLISHED, this);
-                }
-                this.isReconnect = false;
-                break;
-            case 'disconnected':
-                this.isReconnect = true;
-
-                // Informs interested parties that the connection has been
-                // interrupted.
-                if (this.wasstable) {
-                    this.room.eventEmitter.emit(
-                        XMPPEvents.CONNECTION_INTERRUPTED, this);
-                }
-                break;
-            case 'failed':
-                this.room.eventEmitter.emit(
-                    XMPPEvents.CONNECTION_ICE_FAILED, this);
-                break;
-            }
-        };
-
-        /**
-         * The negotiationneeded event is fired whenever we shake the media on the
-         * RTCPeerConnection object.
-         */
-        this.peerconnection.onnegotiationneeded = () => {
-            const state = this.peerconnection.signalingState;
-            const remoteDescription = this.peerconnection.remoteDescription;
-
-            if (this.usesUnifiedPlan && state === 'stable'
-                && remoteDescription && typeof remoteDescription.sdp === 'string') {
-                logger.debug(`${this} onnegotiationneeded fired on ${this.peerconnection} in state: ${state}`);
-                const workFunction = finishedCallback => {
-                    const oldSdp = new SDP(this.peerconnection.localDescription.sdp);
-
-                    this._renegotiate()
-                        .then(() => {
-                            const newSdp = new SDP(this.peerconnection.localDescription.sdp);
-
-                            this.notifyMySSRCUpdate(oldSdp, newSdp);
-                            finishedCallback();
-                        },
-                        finishedCallback /* will be called with en error */);
-                };
-
-                this.modificationQueue.push(
-                    workFunction,
-                    error => {
-                        if (error) {
-                            logger.error(`${this} onnegotiationneeded error`, error);
-                        } else {
-                            logger.debug(`${this} onnegotiationneeded executed - OK`);
+                        if (this.isReconnect || usesTerminateForRestart) {
+                            this.room.eventEmitter.emit(
+                                XMPPEvents.CONNECTION_RESTORED, this);
                         }
-                    });
+                    }
+
+                    // Add a workaround for an issue on chrome in Unified plan when the local endpoint is the offerer.
+                    // The 'signalingstatechange' event for 'stable' is handled after the 'iceconnectionstatechange' event
+                    // for 'completed' is handled by the client. This prevents the client from firing a
+                    // CONNECTION_ESTABLISHED event for the p2p session. As a result, the offerer continues to stay on the
+                    // jvb connection while the remote peer switches to the p2p connection breaking the media flow between
+                    // the endpoints.
+                    // TODO - file a chromium bug and add the information here.
+                    if (!this.wasConnected
+                        && (this.wasstable
+                            || isStable
+                            || (this.usesUnifiedPlan && this.isInitiator && browser.isChromiumBased()))) {
+
+                        // Switch between ICE gathering and ICE checking whichever
+                        // started first (scenarios are different for initiator
+                        // vs responder)
+                        const iceStarted
+                            = Math.min(
+                                this._iceCheckingStartedTimestamp,
+                                this._gatheringStartedTimestamp);
+
+                        this.establishmentDuration = now - iceStarted;
+                        this.wasConnected = true;
+                        this.room.eventEmitter.emit(
+                            XMPPEvents.CONNECTION_ESTABLISHED, this);
+                    }
+                    this.isReconnect = false;
+                    break;
             }
         };
 
+       
         // The signaling layer will bind it's listeners at this point
         this.signalingLayer.setChatRoom(this.room);
     }
@@ -641,7 +513,7 @@ export default class JingleSessionPC extends JingleSession {
                 }
                 this.dripContainer.push(candidate);
             } else {
-                this.sendIceCandidates([ candidate ]);
+                this.sendIceCandidates([candidate]);
             }
         } else {
             logger.log(`${this} sendIceCandidate: last candidate`);
@@ -664,12 +536,16 @@ export default class JingleSessionPC extends JingleSession {
         }
 
         logger.log(`${this} sendIceCandidates ${JSON.stringify(candidates)}`);
-        const cand = $iq({ to: this.remoteJid,
-            type: 'set' })
-            .c('jingle', { xmlns: 'urn:xmpp:jingle:1',
+        const cand = $iq({
+            to: this.remoteJid,
+            type: 'set'
+        })
+            .c('jingle', {
+                xmlns: 'urn:xmpp:jingle:1',
                 action: 'transport-info',
                 initiator: this.initiatorJid,
-                sid: this.sid });
+                sid: this.sid
+            });
 
         const localSDP = new SDP(this.peerconnection.localDescription.sdp);
 
@@ -728,45 +604,6 @@ export default class JingleSessionPC extends JingleSession {
         // logger.log('was this the last candidate', this.lasticecandidate);
         this.connection.sendIQ(
             cand, null, this.newJingleErrorHandler(cand), IQ_TIMEOUT);
-    }
-
-    /**
-     * Sends Jingle 'session-info' message which includes custom Jitsi Meet
-     * 'ice-state' element with the text value 'failed' to let Jicofo know
-     * that the ICE connection has entered the failed state. It can then
-     * choose to re-create JVB channels and send 'transport-replace' to
-     * retry the connection.
-     */
-    sendIceFailedNotification() {
-        const sessionInfo
-            = $iq({
-                to: this.remoteJid,
-                type: 'set' })
-            .c('jingle', { xmlns: 'urn:xmpp:jingle:1',
-                action: 'session-info',
-                initiator: this.initiatorJid,
-                sid: this.sid })
-            .c('ice-state', { xmlns: 'http://jitsi.org/protocol/focus' })
-            .t('failed')
-            .up();
-
-        this._bridgeSessionId
-            && sessionInfo.c(
-                'bridge-session', {
-                    xmlns: 'http://jitsi.org/protocol/focus',
-                    id: this._bridgeSessionId
-                });
-
-        this.connection.sendIQ2(
-            sessionInfo, {
-                /*
-                 * This message will be often sent when there are connectivity
-                 * issues, so make it slightly longer than Prosody's default BOSH
-                 * inactivity timeout of 60 seconds.
-                 */
-                timeout: 65
-            })
-            .catch(this.newJingleErrorHandler(sessionInfo));
     }
 
     /**
@@ -838,7 +675,7 @@ export default class JingleSessionPC extends JingleSession {
         const ssrcs
             = $(contents).find(
                 '>description>'
-                    + 'source[xmlns="urn:xmpp:jingle:apps:rtp:ssma:0"]');
+                + 'source[xmlns="urn:xmpp:jingle:apps:rtp:ssma:0"]');
 
         ssrcs.each((i, ssrcElement) => {
             const ssrc = Number(ssrcElement.getAttribute('ssrc'));
@@ -1009,10 +846,8 @@ export default class JingleSessionPC extends JingleSession {
         this.setOfferAnswerCycle(
             jingleAnswer,
             () => {
-                logger.info(`${this} setAnswer - succeeded`);
             },
             error => {
-                logger.error(`${this} setAnswer failed: `, error);
             });
     }
 
@@ -1078,31 +913,16 @@ export default class JingleSessionPC extends JingleSession {
                             this.sendContentModify();
                         }
                     }
-
-                    // Old local SDP will be available when we're setting answer
-                    // for the first time, but not when offer and it's fine
-                    // since we're generating an answer now it will contain all
-                    // our SSRCs
-                    if (oldLocalSdp) {
-                        const newLocalSdp
-                            = new SDP(this.peerconnection.localDescription.sdp);
-
-                        this.notifyMySSRCUpdate(
-                            new SDP(oldLocalSdp), newLocalSdp);
-                    }
                 })
                 .then(() => finishedCallback(), error => finishedCallback(error));
         };
 
-        logger.debug(`${this} Queued setOfferAnswerCycle task`);
         this.modificationQueue.push(
             workFunction,
             error => {
                 if (error) {
-                    logger.error(`${this} setOfferAnswerCycle task failed: ${error}`);
                     failure(error);
                 } else {
-                    logger.debug(`${this} setOfferAnswerCycle task done`);
                     success();
                 }
             });
@@ -1126,98 +946,14 @@ export default class JingleSessionPC extends JingleSession {
             const workFunction = finishedCallback => {
                 this._renegotiate().then(
                     () => {
-                        logger.debug(`${this} setVideoCodecs task is done`);
-
                         return finishedCallback();
                     }, error => {
-                        logger.error(`${this} setVideoCodecs task failed: ${error}`);
-
                         return finishedCallback(error);
                     });
             };
-
-            logger.debug(`${this} Queued setVideoCodecs task`);
-
             // Queue and execute
             this.modificationQueue.push(workFunction);
         }
-    }
-
-    /* eslint-enable max-params */
-
-    /**
-     * Although it states "replace transport" it does accept full Jingle offer
-     * which should contain new ICE transport details.
-     * @param jingleOfferElem an element Jingle IQ that contains new offer and
-     *        transport info.
-     * @param success callback called when we succeed to accept new offer.
-     * @param failure function(error) called when we fail to accept new offer.
-     */
-    replaceTransport(jingleOfferElem, success, failure) {
-        if (this.options.enableForcedReload) {
-            const sdp = new SDP(this.peerconnection.localDescription.sdp);
-
-            this.sendTransportAccept(sdp, success, failure);
-            this.room.eventEmitter.emit(XMPPEvents.CONNECTION_RESTARTED, this);
-
-            return;
-        }
-        this.room.eventEmitter.emit(XMPPEvents.ICE_RESTARTING, this);
-
-        // We need to first reject the 'data' section to have the SCTP stack
-        // cleaned up to signal the known data channel is now invalid. After
-        // that the original offer is set to have the SCTP connection
-        // established with the new bridge.
-        const originalOffer = jingleOfferElem.clone();
-
-        jingleOfferElem
-            .find('>content[name=\'data\']')
-            .attr('senders', 'rejected');
-
-        // Remove all remote sources in order to reset the client's state
-        // for the remote MediaStreams. When a conference is moved to
-        // another bridge it will start streaming with a sequence number
-        // that is not in sync with the most recently seen by the client.
-        // The symptoms include frozen or black video and lots of "failed to
-        // unprotect SRTP packets" in Chrome logs.
-        jingleOfferElem
-            .find('>content>description>source')
-            .remove();
-        jingleOfferElem
-            .find('>content>description>ssrc-group')
-            .remove();
-
-        // On the JVB it's not a real ICE restart and all layers are re-initialized from scratch as Jicofo does
-        // the restart by re-allocating new channels. Chrome (or WebRTC stack) needs to have the DTLS transport layer
-        // reset to start a new handshake with fresh DTLS transport on the bridge. Make it think that the DTLS
-        // fingerprint has changed by setting an all zeros key.
-        const newFingerprint = jingleOfferElem.find('>content>transport>fingerprint');
-
-        newFingerprint.attr('hash', 'sha-1');
-        newFingerprint.text('00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00');
-
-        // First set an offer with a rejected 'data' section
-        this.setOfferAnswerCycle(
-            jingleOfferElem,
-            () => {
-                // Now set the original offer(with the 'data' section)
-                this.setOfferAnswerCycle(
-                    originalOffer,
-                    () => {
-                        const localSDP
-                            = new SDP(this.peerconnection.localDescription.sdp);
-
-                        this.sendTransportAccept(localSDP, success, failure);
-
-                        this.room.eventEmitter.emit(
-                            XMPPEvents.ICE_RESTART_SUCCESS,
-                            this,
-                            originalOffer);
-                    },
-                    failure);
-            },
-            failure
-        );
     }
 
     /**
@@ -1232,13 +968,17 @@ export default class JingleSessionPC extends JingleSession {
         // NOTE: since we're just reading from it, we don't need to be within
         //  the modification queue to access the local description
         const localSDP = new SDP(this.peerconnection.localDescription.sdp);
-        let accept = $iq({ to: this.remoteJid,
-            type: 'set' })
-            .c('jingle', { xmlns: 'urn:xmpp:jingle:1',
+        let accept = $iq({
+            to: this.remoteJid,
+            type: 'set'
+        })
+            .c('jingle', {
+                xmlns: 'urn:xmpp:jingle:1',
                 action: 'session-accept',
                 initiator: this.initiatorJid,
                 responder: this.responderJid,
-                sid: this.sid });
+                sid: this.sid
+            });
 
         if (this.webrtcIceTcpDisable) {
             localSDP.removeTcpCandidates = true;
@@ -1350,99 +1090,6 @@ export default class JingleSessionPC extends JingleSession {
             this.rtc.setReceiverVideoConstraint(maxFrameHeight);
         }
     }
-
-    /**
-     * Sends Jingle 'transport-accept' message which is a response to
-     * 'transport-replace'.
-     * @param localSDP the 'SDP' object with local session description
-     * @param success callback called when we receive 'RESULT' packet for
-     *        'transport-replace'
-     * @param failure function(error) called when we receive an error response
-     *        or when the request has timed out.
-     * @private
-     */
-    sendTransportAccept(localSDP, success, failure) {
-        let transportAccept = $iq({ to: this.remoteJid,
-            type: 'set' })
-            .c('jingle', {
-                xmlns: 'urn:xmpp:jingle:1',
-                action: 'transport-accept',
-                initiator: this.initiatorJid,
-                sid: this.sid
-            });
-
-        localSDP.media.forEach((medialines, idx) => {
-            const mline = SDPUtil.parseMLine(medialines.split('\r\n')[0]);
-
-            transportAccept.c('content',
-                {
-                    creator:
-                        this.initiatorJid === this.localJid
-                            ? 'initiator'
-                            : 'responder',
-                    name: mline.media
-                }
-            );
-            localSDP.transportToJingle(idx, transportAccept);
-            transportAccept.up();
-        });
-
-        // Calling tree() to print something useful to the logger
-        transportAccept = transportAccept.tree();
-        logger.info(`${this} Sending transport-accept: `, transportAccept);
-
-        this.connection.sendIQ(transportAccept,
-            success,
-            this.newJingleErrorHandler(transportAccept, failure),
-            IQ_TIMEOUT);
-    }
-
-    /**
-     * Sends Jingle 'transport-reject' message which is a response to
-     * 'transport-replace'.
-     * @param success callback called when we receive 'RESULT' packet for
-     *        'transport-replace'
-     * @param failure function(error) called when we receive an error response
-     *        or when the request has timed out.
-     *
-     * FIXME method should be marked as private, but there's some spaghetti that
-     *       needs to be fixed prior doing that
-     */
-    sendTransportReject(success, failure) {
-        // Send 'transport-reject', so that the focus will
-        // know that we've failed
-        let transportReject = $iq({ to: this.remoteJid,
-            type: 'set' })
-            .c('jingle', {
-                xmlns: 'urn:xmpp:jingle:1',
-                action: 'transport-reject',
-                initiator: this.initiatorJid,
-                sid: this.sid
-            });
-
-        transportReject = transportReject.tree();
-        logger.info(`${this} Sending 'transport-reject'`, transportReject);
-
-        this.connection.sendIQ(transportReject,
-            success,
-            this.newJingleErrorHandler(transportReject, failure),
-            IQ_TIMEOUT);
-    }
-
-    /**
-     * Sets the maximum bitrates on the local video track. Bitrate values from
-     * videoQuality settings in config.js will be used for configuring the sender.
-     * @returns {Promise<void>} promise that will be resolved when the operation is
-     * successful and rejected otherwise.
-     */
-    setSenderMaxBitrates() {
-        if (this._assertNotEnded()) {
-            return this.peerconnection.setMaxBitRate();
-        }
-
-        return Promise.resolve();
-    }
-
     /**
      * Sets the resolution constraint on the local camera track.
      * @param {number} maxFrameHeight - The user preferred max frame height.
@@ -1451,19 +1098,8 @@ export default class JingleSessionPC extends JingleSession {
      */
     setSenderVideoConstraint(maxFrameHeight) {
         if (this._assertNotEnded()) {
-            logger.info(`${this} setSenderVideoConstraint: ${maxFrameHeight}`);
-
-            // RN doesn't support RTCRtpSenders yet, aggresive layer suspension on RN is implemented
-            // by changing the media direction in the SDP. This is applicable to jvb sessions only.
-            if (!this.isP2P && browser.isReactNative() && typeof maxFrameHeight !== 'undefined') {
-                const videoActive = maxFrameHeight > 0;
-
-                return this.setMediaTransferActive(true, videoActive);
-            }
-
             return this.peerconnection.setSenderVideoConstraint(maxFrameHeight);
         }
-
         return Promise.resolve();
     }
 
@@ -1480,86 +1116,6 @@ export default class JingleSessionPC extends JingleSession {
 
         return Promise.resolve();
     }
-
-    /**
-     * @inheritDoc
-     */
-    terminate(success, failure, options) {
-        if (this.state === JingleSessionState.ENDED) {
-            return;
-        }
-
-        if (!options || Boolean(options.sendSessionTerminate)) {
-            let sessionTerminate
-                = $iq({
-                    to: this.remoteJid,
-                    type: 'set'
-                })
-                    .c('jingle', {
-                        xmlns: 'urn:xmpp:jingle:1',
-                        action: 'session-terminate',
-                        initiator: this.initiatorJid,
-                        sid: this.sid
-                    })
-                    .c('reason')
-                    .c((options && options.reason) || 'success')
-                    .up();
-
-            if (options && options.reasonDescription) {
-                sessionTerminate
-                    .c('text')
-                    .t(options.reasonDescription)
-                    .up()
-                    .up();
-            } else {
-                sessionTerminate.up();
-            }
-
-            this._bridgeSessionId
-                && sessionTerminate.c(
-                    'bridge-session', {
-                        xmlns: 'http://jitsi.org/protocol/focus',
-                        id: this._bridgeSessionId,
-                        restart: options && options.requestRestart === true
-                    }).up();
-
-            // Calling tree() to print something useful
-            sessionTerminate = sessionTerminate.tree();
-            logger.info(`${this} Sending session-terminate`, sessionTerminate);
-            this.connection.sendIQ(
-                sessionTerminate,
-                success,
-                this.newJingleErrorHandler(sessionTerminate, failure),
-                IQ_TIMEOUT);
-        } else {
-            logger.info(`${this} Skipped sending session-terminate`);
-        }
-
-        // this should result in 'onTerminated' being called by strope.jingle.js
-        this.connection.jingle.terminate(this.sid);
-    }
-
-    /**
-     *
-     * @param reasonCondition
-     * @param reasonText
-     */
-    onTerminated(reasonCondition, reasonText) {
-        // Do something with reason and reasonCondition when we start to care
-        // this.reasonCondition = reasonCondition;
-        // this.reasonText = reasonText;
-        logger.info(`${this} Session terminated`, reasonCondition, reasonText);
-
-        this._xmppListeners.forEach(removeListener => removeListener());
-        this._xmppListeners = [];
-
-        if (this._removeSenderVideoConstraintsChangeListener) {
-            this._removeSenderVideoConstraintsChangeListener();
-        }
-
-        this.close();
-    }
-
     /**
      * Handles XMPP connection state changes.
      *
@@ -1568,211 +1124,7 @@ export default class JingleSessionPC extends JingleSession {
     onXmppStatusChanged(status) {
         if (status === XmppConnection.Status.CONNECTED && this._cachedOldLocalSdp) {
             logger.info(`${this} Sending SSRC update on reconnect`);
-            this.notifyMySSRCUpdate(
-                this._cachedOldLocalSdp,
-                this._cachedNewLocalSdp);
         }
-    }
-
-    /**
-     * Parse the information from the xml sourceAddElem and translate it
-     *  into sdp lines
-     * @param {jquery xml element} sourceAddElem the source-add
-     *  element from jingle
-     * @param {SDP object} currentRemoteSdp the current remote
-     *  sdp (as of this new source-add)
-     * @returns {list} a list of SDP line strings that should
-     *  be added to the remote SDP
-     */
-    _parseSsrcInfoFromSourceAdd(sourceAddElem, currentRemoteSdp) {
-        const addSsrcInfo = [];
-
-        $(sourceAddElem).each((i1, content) => {
-            const name = $(content).attr('name');
-            let lines = '';
-
-            $(content)
-                .find('ssrc-group[xmlns="urn:xmpp:jingle:apps:rtp:ssma:0"]')
-                .each(function() {
-                    // eslint-disable-next-line no-invalid-this
-                    const semantics = this.getAttribute('semantics');
-                    const ssrcs
-                        = $(this) // eslint-disable-line no-invalid-this
-                            .find('>source')
-                            .map(function() {
-                                // eslint-disable-next-line no-invalid-this
-                                return this.getAttribute('ssrc');
-                            })
-                            .get();
-
-                    if (ssrcs.length) {
-                        lines
-                            += `a=ssrc-group:${semantics} ${
-                                ssrcs.join(' ')}\r\n`;
-                    }
-                });
-
-            // handles both >source and >description>source
-            const tmp
-                = $(content).find(
-                    'source[xmlns="urn:xmpp:jingle:apps:rtp:ssma:0"]');
-
-            /* eslint-disable no-invalid-this */
-            tmp.each(function() {
-                const ssrc = $(this).attr('ssrc');
-
-                if (currentRemoteSdp.containsSSRC(ssrc)) {
-                    logger.warn(`${this} Source-add request for existing SSRC: ${ssrc}`);
-
-                    return;
-                }
-
-                // eslint-disable-next-line newline-per-chained-call
-                $(this).find('>parameter').each(function() {
-                    lines += `a=ssrc:${ssrc} ${$(this).attr('name')}`;
-                    if ($(this).attr('value') && $(this).attr('value').length) {
-                        lines += `:${$(this).attr('value')}`;
-                    }
-                    lines += '\r\n';
-                });
-            });
-
-            /* eslint-enable no-invalid-this */
-            currentRemoteSdp.media.forEach((media, i2) => {
-                if (!SDPUtil.findLine(media, `a=mid:${name}`)) {
-                    return;
-                }
-                if (!addSsrcInfo[i2]) {
-                    addSsrcInfo[i2] = '';
-                }
-                addSsrcInfo[i2] += lines;
-            });
-        });
-
-        return addSsrcInfo;
-    }
-
-    /**
-     * Handles a Jingle source-add message for this Jingle session.
-     * @param elem An array of Jingle "content" elements.
-     */
-    addRemoteStream(elem) {
-        this._addOrRemoveRemoteStream(true /* add */, elem);
-    }
-
-    /**
-     * Handles a Jingle source-remove message for this Jingle session.
-     * @param elem An array of Jingle "content" elements.
-     */
-    removeRemoteStream(elem) {
-        this._addOrRemoveRemoteStream(false /* remove */, elem);
-    }
-
-    /**
-     * Handles the deletion of the remote tracks and SSRCs associated with a remote endpoint.
-     *
-     * @param {string} id Endpoint id of the participant that has left the call.
-     * @returns {Promise<JitsiRemoteTrack>} Promise that resolves with the tracks that are removed or error if the
-     * operation fails.
-     */
-    removeRemoteStreamsOnLeave(id) {
-        let remoteTracks = [];
-
-        const workFunction = finishCallback => {
-            const removeSsrcInfo = this.peerconnection.getRemoteSourceInfoByParticipant(id);
-
-            if (removeSsrcInfo.length) {
-                const oldLocalSdp = new SDP(this.peerconnection.localDescription.sdp);
-                const newRemoteSdp = this._processRemoteRemoveSource(removeSsrcInfo);
-
-                remoteTracks = this.peerconnection.removeRemoteTracks(id);
-                this._renegotiate(newRemoteSdp.raw)
-                    .then(() => {
-                        const newLocalSDP = new SDP(this.peerconnection.localDescription.sdp);
-
-                        this.notifyMySSRCUpdate(oldLocalSdp, newLocalSDP);
-                        finishCallback();
-                    })
-                    .catch(err => finishCallback(err));
-            } else {
-                finishCallback();
-            }
-        };
-
-        return new Promise((resolve, reject) => {
-            logger.debug(`${this} Queued removeRemoteStreamsOnLeave task for participant ${id}`);
-
-            this.modificationQueue.push(
-                workFunction,
-                error => {
-                    if (error) {
-                        logger.error(`${this} removeRemoteStreamsOnLeave error:`, error);
-                        reject(error);
-                    } else {
-                        logger.info(`${this} removeRemoteStreamsOnLeave done!`);
-                        resolve(remoteTracks);
-                    }
-                });
-        });
-    }
-
-    /**
-     * Handles either Jingle 'source-add' or 'source-remove' message for this
-     * Jingle session.
-     * @param {boolean} isAdd <tt>true</tt> for 'source-add' or <tt>false</tt>
-     * otherwise.
-     * @param {Array<Element>} elem an array of Jingle "content" elements.
-     * @private
-     */
-    _addOrRemoveRemoteStream(isAdd, elem) {
-        const logPrefix = isAdd ? 'addRemoteStream' : 'removeRemoteStream';
-
-        if (isAdd) {
-            this.readSsrcInfo(elem);
-        }
-
-        const workFunction = finishedCallback => {
-            if (!this.peerconnection.localDescription
-                || !this.peerconnection.localDescription.sdp) {
-                const errMsg = `${logPrefix} - localDescription not ready yet`;
-
-                logger.error(errMsg);
-                finishedCallback(errMsg);
-
-                return;
-            }
-
-            logger.log(`${this} Processing ${logPrefix}`);
-
-            const oldLocalSdp = new SDP(this.peerconnection.localDescription.sdp);
-            const sdp = new SDP(this.peerconnection.remoteDescription.sdp);
-            const addOrRemoveSsrcInfo
-                = isAdd
-                    ? this._parseSsrcInfoFromSourceAdd(elem, sdp)
-                    : this._parseSsrcInfoFromSourceRemove(elem, sdp);
-            const newRemoteSdp
-                = isAdd
-                    ? this._processRemoteAddSource(addOrRemoveSsrcInfo)
-                    : this._processRemoteRemoveSource(addOrRemoveSsrcInfo);
-
-            this._renegotiate(newRemoteSdp.raw)
-                .then(() => {
-                    const newLocalSdp
-                        = new SDP(this.peerconnection.localDescription.sdp);
-
-                    logger.log(`${this} ${logPrefix} - OK`);
-                    this.notifyMySSRCUpdate(oldLocalSdp, newLocalSdp);
-                    finishedCallback();
-                }, error => {
-                    logger.error(`${this} ${logPrefix} failed:`, error);
-                    finishedCallback(error);
-                });
-        };
-
-        logger.debug(`${this} Queued ${logPrefix} task`);
-
-        // Queue and execute
-        this.modificationQueue.push(workFunction);
     }
 
     /**
@@ -1795,90 +1147,6 @@ export default class JingleSessionPC extends JingleSession {
 
         remoteSdp.fromJingle(offerIq);
         this.readSsrcInfo($(offerIq).find('>content'));
-
-        return remoteSdp;
-    }
-
-    /**
-     * Remove the given ssrc lines from the current remote sdp
-     * @param {list} removeSsrcInfo a list of SDP line strings that
-     *  should be removed from the remote SDP
-     * @returns type {SDP Object} the new remote SDP (after removing the lines
-     *  in removeSsrcInfo
-     */
-    _processRemoteRemoveSource(removeSsrcInfo) {
-        const remoteSdp = this.usesUnifiedPlan
-            ? new SDP(this.peerconnection.peerconnection.remoteDescription.sdp)
-            : new SDP(this.peerconnection.remoteDescription.sdp);
-
-        removeSsrcInfo.forEach((lines, idx) => {
-            // eslint-disable-next-line no-param-reassign
-            lines = lines.split('\r\n');
-            lines.pop(); // remove empty last element;
-            if (this.usesUnifiedPlan) {
-                lines.forEach(line => {
-                    const mid = remoteSdp.media.findIndex(mLine => mLine.includes(line));
-
-                    if (mid > -1) {
-                        remoteSdp.media[mid] = remoteSdp.media[mid].replace(`${line}\r\n`, '');
-
-                        // The current direction of the transceiver for p2p will depend on whether a local sources is
-                        // added or not. It will be 'sendrecv' if the local source is present, 'sendonly' otherwise.
-                        if (this.isP2P) {
-                            const mediaType = SDPUtil.parseMLine(remoteSdp.media[mid].split('\r\n')[0])?.media;
-                            const desiredDirection = this.peerconnection.getDesiredMediaDirection(mediaType, false);
-
-                            [ MediaDirection.SENDRECV, MediaDirection.SENDONLY ].forEach(direction => {
-                                remoteSdp.media[mid] = remoteSdp.media[mid]
-                                    .replace(`a=${direction}`, `a=${desiredDirection}`);
-                            });
-
-                        // Jvb connections will have direction set to 'sendonly' when the remote ssrc is present.
-                        } else {
-                            // Change the direction to "inactive" always for jvb connection.
-                            remoteSdp.media[mid] = remoteSdp.media[mid]
-                                .replace(`a=${MediaDirection.SENDONLY}`, `a=${MediaDirection.INACTIVE}`);
-                        }
-                    }
-                });
-            } else {
-                lines.forEach(line => {
-                    remoteSdp.media[idx]
-                        = remoteSdp.media[idx].replace(`${line}\r\n`, '');
-                });
-            }
-        });
-        remoteSdp.raw = remoteSdp.session + remoteSdp.media.join('');
-
-        return remoteSdp;
-    }
-
-    /**
-     * Add the given ssrc lines to the current remote sdp
-     * @param {list} addSsrcInfo a list of SDP line strings that
-     *  should be added to the remote SDP
-     * @returns type {SDP Object} the new remote SDP (after removing the lines
-     *  in removeSsrcInfo
-     */
-    _processRemoteAddSource(addSsrcInfo) {
-        const remoteSdp = new SDP(this.peerconnection.remoteDescription.sdp);
-
-        addSsrcInfo.forEach((lines, idx) => {
-            remoteSdp.media[idx] += lines;
-
-            // Make sure to change the direction to 'sendrecv' only for p2p connections. For jvb connections, a new
-            // m-line is added for the new remote sources.
-            if (this.isP2P && this.usesUnifiedPlan) {
-                const mediaType = SDPUtil.parseMLine(remoteSdp.media[idx].split('\r\n')[0])?.media;
-                const desiredDirection = this.peerconnection.getDesiredMediaDirection(mediaType, true);
-
-                [ MediaDirection.RECVONLY, MediaDirection.INACTIVE ].forEach(direction => {
-                    remoteSdp.media[idx] = remoteSdp.media[idx]
-                        .replace(`a=${direction}`, `a=${desiredDirection}`);
-                });
-            }
-        });
-        remoteSdp.raw = remoteSdp.session + remoteSdp.media.join('');
 
         return remoteSdp;
     }
@@ -2011,7 +1279,7 @@ export default class JingleSessionPC extends JingleSession {
                     // 2. source-add for the new video stream
                     this.peerconnection.clearRecvonlySsrc();
 
-                // Transition from video to no video
+                    // Transition from video to no video
                 } else if (oldTrack && oldTrack.isVideoTrack() && !newTrack) {
                     // Clearing current primary SSRC and generating the recvonly
                     // will result in:
@@ -2026,16 +1294,13 @@ export default class JingleSessionPC extends JingleSession {
                 .then(shouldRenegotiate => {
                     let promise = Promise.resolve();
 
-                    logger.debug(`${this} TPC.replaceTrack finished. shouldRenegotiate = ${
-                        shouldRenegotiate}, JingleSessionState = ${this.state}`);
+                    logger.debug(`${this} TPC.replaceTrack finished. shouldRenegotiate = ${shouldRenegotiate}, JingleSessionState = ${this.state}`);
 
                     if (shouldRenegotiate
                         && (oldTrack || newTrack)
                         && this.state === JingleSessionState.ACTIVE) {
                         promise = this._renegotiate().then(() => {
                             const newLocalSDP = new SDP(this.peerconnection.localDescription.sdp);
-
-                            this.notifyMySSRCUpdate(new SDP(oldLocalSdp), newLocalSDP);
                         });
                     }
 
@@ -2069,444 +1334,6 @@ export default class JingleSessionPC extends JingleSession {
                     }
                 });
         });
-    }
-
-    /**
-     * Parse the information from the xml sourceRemoveElem and translate it
-     *  into sdp lines
-     * @param {jquery xml element} sourceRemoveElem the source-remove
-     *  element from jingle
-     * @param {SDP object} currentRemoteSdp the current remote
-     *  sdp (as of this new source-remove)
-     * @returns {list} a list of SDP line strings that should
-     *  be removed from the remote SDP
-     */
-    _parseSsrcInfoFromSourceRemove(sourceRemoveElem, currentRemoteSdp) {
-        const removeSsrcInfo = [];
-
-        $(sourceRemoveElem).each((i1, content) => {
-            const name = $(content).attr('name');
-            let lines = '';
-
-            $(content)
-                .find('ssrc-group[xmlns="urn:xmpp:jingle:apps:rtp:ssma:0"]')
-                .each(function() {
-                    /* eslint-disable no-invalid-this */
-                    const semantics = this.getAttribute('semantics');
-                    const ssrcs
-                        = $(this)
-                            .find('>source')
-                            .map(function() {
-                                return this.getAttribute('ssrc');
-                            })
-                            .get();
-
-                    if (ssrcs.length) {
-                        lines
-                            += `a=ssrc-group:${semantics} ${
-                                ssrcs.join(' ')}\r\n`;
-                    }
-
-                    /* eslint-enable no-invalid-this */
-                });
-            const ssrcs = [];
-
-            // handles both >source and >description>source versions
-            const tmp
-                = $(content).find(
-                    'source[xmlns="urn:xmpp:jingle:apps:rtp:ssma:0"]');
-
-            tmp.each(function() {
-                // eslint-disable-next-line no-invalid-this
-                const ssrc = $(this).attr('ssrc');
-
-                ssrcs.push(ssrc);
-            });
-            currentRemoteSdp.media.forEach((media, i2) => {
-                if (!SDPUtil.findLine(media, `a=mid:${name}`)) {
-                    return;
-                }
-                if (!removeSsrcInfo[i2]) {
-                    removeSsrcInfo[i2] = '';
-                }
-                ssrcs.forEach(ssrc => {
-                    const ssrcLines
-                        = SDPUtil.findLines(media, `a=ssrc:${ssrc}`);
-
-                    if (ssrcLines.length) {
-                        removeSsrcInfo[i2] += `${ssrcLines.join('\r\n')}\r\n`;
-                    }
-                });
-                removeSsrcInfo[i2] += lines;
-            });
-        });
-
-        return removeSsrcInfo;
-    }
-
-    /**
-     * Will print an error if there is any difference, between the SSRCs given
-     * in the <tt>oldSDP</tt> and the ones currently described in
-     * the peerconnection's local description.
-     * @param {string} operationName the operation's name which will be printed
-     * in the error message.
-     * @param {SDP} oldSDP the old local SDP which will be compared with
-     * the current one.
-     * @return {boolean} <tt>true</tt> if there was any change or <tt>false</tt>
-     * otherwise.
-     * @private
-     */
-    _verifyNoSSRCChanged(operationName, oldSDP) {
-        const currentLocalSDP
-            = new SDP(this.peerconnection.localDescription.sdp);
-        let sdpDiff = new SDPDiffer(oldSDP, currentLocalSDP);
-        const addedMedia = sdpDiff.getNewMedia();
-
-        if (Object.keys(addedMedia).length) {
-            logger.error(`${this} - some SSRC were added on ${operationName}`, addedMedia);
-
-            return false;
-        }
-
-        sdpDiff = new SDPDiffer(currentLocalSDP, oldSDP);
-        const removedMedia = sdpDiff.getNewMedia();
-
-        if (Object.keys(removedMedia).length) {
-            logger.error(`${this} - some SSRCs were removed on ${operationName}`, removedMedia);
-
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
-     * Adds local track back to this session, as part of the unmute operation.
-     * @param {JitsiLocalTrack} track
-     * @return {Promise} a promise that will resolve once the local track is
-     * added back to this session and renegotiation succeeds. Will be rejected
-     * with a <tt>string</tt> that provides some error details in case something
-     * goes wrong.
-     */
-    addTrackAsUnmute(track) {
-        return this._addRemoveTrackAsMuteUnmute(
-            false /* add as unmute */, track)
-            .then(() => {
-                // Apply the video constraints, max bitrates and degradation preference on
-                // the video sender if needed.
-                if (track.isVideoTrack() && browser.doesVideoMuteByStreamRemove()) {
-                    return this.setSenderMaxBitrates()
-                        .then(() => this.setSenderVideoDegradationPreference())
-                        .then(() => this.setSenderVideoConstraint());
-                }
-            });
-    }
-
-    /**
-     * Remove local track as part of the mute operation.
-     * @param {JitsiLocalTrack} track the local track to be removed
-     * @return {Promise} a promise which will be resolved once the local track
-     * is removed from this session and the renegotiation is performed.
-     * The promise will be rejected with a <tt>string</tt> that the describes
-     * the error if anything goes wrong.
-     */
-    removeTrackAsMute(track) {
-        return this._addRemoveTrackAsMuteUnmute(
-            true /* remove as mute */, track);
-    }
-
-    /**
-     * See {@link addTrackAsUnmute} and {@link removeTrackAsMute}.
-     * @param {boolean} isMute <tt>true</tt> for "remove as mute" or
-     * <tt>false</tt> for "add as unmute".
-     * @param {JitsiLocalTrack} track the track that will be added/removed
-     * @private
-     */
-    _addRemoveTrackAsMuteUnmute(isMute, track) {
-        if (!track) {
-            return Promise.reject('invalid "track" argument value');
-        }
-        const operationName = isMute ? 'removeTrackMute' : 'addTrackUnmute';
-        const workFunction = finishedCallback => {
-            const tpc = this.peerconnection;
-
-            if (!tpc) {
-                finishedCallback(
-                    `Error:  tried ${operationName} track with no active peer`
-                        + 'connection');
-
-                return;
-            }
-            const oldLocalSDP = tpc.localDescription.sdp;
-            const operationPromise
-                = isMute
-                    ? tpc.removeTrackMute(track)
-                    : tpc.addTrackUnmute(track);
-
-            operationPromise
-                .then(shouldRenegotiate => {
-                    if (shouldRenegotiate && oldLocalSDP && tpc.remoteDescription.sdp) {
-                        this._renegotiate()
-                            .then(() => {
-                                // The results are ignored, as this check failure is not
-                                // enough to fail the whole operation. It will log
-                                // an error inside.
-                                this._verifyNoSSRCChanged(
-                                    operationName, new SDP(oldLocalSDP));
-                                finishedCallback();
-                            });
-                    } else {
-                        finishedCallback();
-                    }
-                },
-                finishedCallback /* will be called with an error */);
-        };
-
-        logger.debug(`${this} Queued ${operationName} task`);
-
-        return new Promise((resolve, reject) => {
-            this.modificationQueue.push(
-                workFunction,
-                error => {
-                    if (error) {
-                        logger.error(`${this} ${operationName} failed`);
-                        reject(error);
-                    } else {
-                        logger.debug(`${this} ${operationName} done`);
-                        resolve();
-                    }
-                });
-        });
-    }
-
-    /**
-     * Resumes or suspends media transfer over the underlying peer connection.
-     * @param {boolean} audioActive <tt>true</tt> to enable audio media
-     * transfer or <tt>false</tt> to suspend audio media transmission.
-     * @param {boolean} videoActive <tt>true</tt> to enable video media
-     * transfer or <tt>false</tt> to suspend video media transmission.
-     * @return {Promise} a <tt>Promise</tt> which will resolve once
-     * the operation is done. It will be rejected with an error description as
-     * a string in case anything goes wrong.
-     */
-    setMediaTransferActive(audioActive, videoActive) {
-        if (!this.peerconnection) {
-            return Promise.reject(
-                'Can not modify transfer active state,'
-                    + ' before "initialize" is called');
-        }
-
-        const logAudioStr = audioActive ? 'audio active' : 'audio inactive';
-        const logVideoStr = videoActive ? 'video active' : 'video inactive';
-
-        logger.info(`${this} Queued make ${logVideoStr}, ${logAudioStr} task`);
-
-        const workFunction = finishedCallback => {
-            const isSessionActive = this.state === JingleSessionState.ACTIVE;
-
-            // Because the value is modified on the queue it's impossible to
-            // check it's final value reliably prior to submitting the task.
-            // The rule here is that the last submitted state counts.
-            // Check the values here to avoid unnecessary renegotiation cycle.
-            const audioActiveChanged
-                = this.peerconnection.setAudioTransferActive(audioActive);
-
-            if (this._localVideoActive !== videoActive) {
-                this._localVideoActive = videoActive;
-
-                // Do only for P2P - Jicofo will reply with 'bad-request'
-                // We don't want to send 'content-modify', before the initial
-                // O/A (state === JingleSessionState.ACTIVE), because that will
-                // mess up video media direction in the remote SDP.
-                // 'content-modify' when processed only affects the media
-                // direction in the local SDP. We're doing that, because setting
-                // 'inactive' on video media in remote SDP will mess up our SDP
-                // translation chain (simulcast, RTX, video mute etc.).
-                if (this.isP2P && isSessionActive) {
-                    this.sendContentModify();
-                }
-            }
-
-            const pcVideoActiveChanged
-                = this.peerconnection.setVideoTransferActive(
-                    this._localVideoActive && this._remoteVideoActive);
-
-            // Will do the sRD/sLD cycle to update SDPs and adjust the media
-            // direction
-            if (isSessionActive
-                    && (audioActiveChanged || pcVideoActiveChanged)) {
-                this._renegotiate()
-                    .then(
-                        finishedCallback,
-                        finishedCallback /* will be called with an error */);
-            } else {
-                finishedCallback();
-            }
-        };
-
-        return new Promise((resolve, reject) => {
-            this.modificationQueue.push(
-                workFunction,
-                error => {
-                    if (error) {
-                        logger.error(`${this} Make ${logVideoStr}, ${logAudioStr} task failed!`);
-                        reject(error);
-                    } else {
-                        logger.debug(`${this} Make ${logVideoStr}, ${logAudioStr} task done!`);
-                        resolve();
-                    }
-                });
-        });
-    }
-
-    /**
-     * Will put and execute on the queue a session modify task. Currently it
-     * only checks the senders attribute of the video content in order to figure
-     * out if the remote peer has video in the inactive state (stored locally
-     * in {@link _remoteVideoActive} - see field description for more info).
-     * @param {jQuery} jingleContents jQuery selector pointing to the jingle
-     * element of the session modify IQ.
-     * @see {@link _remoteVideoActive}
-     * @see {@link _localVideoActive}
-     */
-    modifyContents(jingleContents) {
-        const newVideoSenders
-            = JingleSessionPC.parseVideoSenders(jingleContents);
-        const newMaxFrameHeight
-            = JingleSessionPC.parseMaxFrameHeight(jingleContents);
-
-        // frame height is optional in our content-modify protocol
-        if (newMaxFrameHeight) {
-            logger.info(`${this} received remote max frame height: ${newMaxFrameHeight}`);
-            this.remoteRecvMaxFrameHeight = newMaxFrameHeight;
-            this.eventEmitter.emit(
-                MediaSessionEvents.REMOTE_VIDEO_CONSTRAINTS_CHANGED, this);
-        }
-
-        if (newVideoSenders === null) {
-            logger.error(
-                `${this} - failed to parse video "senders" attribute in`
-                    + '"content-modify" action');
-
-            return;
-        }
-
-        const workFunction = finishedCallback => {
-            if (this._assertNotEnded('content-modify')
-                    && this._modifyRemoteVideoActive(newVideoSenders)) {
-                // Will do the sRD/sLD cycle to update SDPs and adjust
-                // the media direction
-                this._renegotiate()
-                    .then(finishedCallback, finishedCallback /* (error) */);
-            } else {
-                finishedCallback();
-            }
-        };
-
-        logger.debug(`${this} queued "content-modify" task(video senders="${newVideoSenders}")`);
-
-        this.modificationQueue.push(
-            workFunction,
-            error => {
-                if (error) {
-                    logger.error(`${this} "content-modify" failed`, error);
-                } else {
-                    logger.debug(`${this} "content-modify" task(video senders="${newVideoSenders}") done`);
-                }
-            });
-    }
-
-    /**
-     * Processes new value of remote video "senders" Jingle attribute and tries
-     * to apply it for {@link _remoteVideoActive}.
-     * @param {string} remoteVideoSenders the value of "senders" attribute of
-     * Jingle video content element advertised by remote peer.
-     * @return {boolean} <tt>true</tt> if the change affected state of
-     * the underlying peerconnection and renegotiation is required for
-     * the changes to take effect.
-     * @private
-     */
-    _modifyRemoteVideoActive(remoteVideoSenders) {
-        const isRemoteVideoActive
-            = remoteVideoSenders === 'both'
-                || (remoteVideoSenders === 'initiator' && this.isInitiator)
-                || (remoteVideoSenders === 'responder' && !this.isInitiator);
-
-        if (isRemoteVideoActive !== this._remoteVideoActive) {
-            logger.debug(`${this} new remote video active: ${isRemoteVideoActive}`);
-            this._remoteVideoActive = isRemoteVideoActive;
-        }
-
-        return this.peerconnection.setVideoTransferActive(
-            this._localVideoActive && this._remoteVideoActive);
-    }
-
-    /**
-     * Figures out added/removed ssrcs and send update IQs.
-     * @param oldSDP SDP object for old description.
-     * @param newSDP SDP object for new description.
-     */
-    notifyMySSRCUpdate(oldSDP, newSDP) {
-
-        if (this.state !== JingleSessionState.ACTIVE) {
-            logger.warn(`${this} Skipping SSRC update in '${this.state} ' state.`);
-
-            return;
-        }
-
-        if (!this.connection.connected) {
-            // The goal is to compare the oldest SDP with the latest one upon reconnect
-            if (!this._cachedOldLocalSdp) {
-                this._cachedOldLocalSdp = oldSDP;
-            }
-            this._cachedNewLocalSdp = newSDP;
-            logger.warn(`${this} Not sending SSRC update while the signaling is disconnected`);
-
-            return;
-        }
-
-        this._cachedOldLocalSdp = undefined;
-        this._cachedNewLocalSdp = undefined;
-
-        // send source-remove IQ.
-        let sdpDiffer = new SDPDiffer(newSDP, oldSDP);
-        const remove = $iq({ to: this.remoteJid,
-            type: 'set' })
-            .c('jingle', {
-                xmlns: 'urn:xmpp:jingle:1',
-                action: 'source-remove',
-                initiator: this.initiatorJid,
-                sid: this.sid
-            }
-            );
-        const removedAnySSRCs = sdpDiffer.toJingle(remove);
-
-        if (removedAnySSRCs) {
-            logger.info(`${this} Sending source-remove`, remove.tree());
-            this.connection.sendIQ(
-                remove, null,
-                this.newJingleErrorHandler(remove), IQ_TIMEOUT);
-        }
-
-        // send source-add IQ.
-        sdpDiffer = new SDPDiffer(oldSDP, newSDP);
-        const add = $iq({ to: this.remoteJid,
-            type: 'set' })
-            .c('jingle', {
-                xmlns: 'urn:xmpp:jingle:1',
-                action: 'source-add',
-                initiator: this.initiatorJid,
-                sid: this.sid
-            }
-            );
-
-        const containsNewSSRCs = sdpDiffer.toJingle(add);
-
-        if (containsNewSSRCs) {
-            logger.info(`${this} Sending source-add`, add.tree());
-            this.connection.sendIQ(
-                add, null, this.newJingleErrorHandler(add), IQ_TIMEOUT);
-        }
     }
 
     /**
@@ -2559,7 +1386,7 @@ export default class JingleSessionPC extends JingleSession {
             if (failureCb) {
                 failureCb(error);
             } else if (this.state === JingleSessionState.ENDED
-                        && error.reason === 'item-not-found') {
+                && error.reason === 'item-not-found') {
                 // When remote peer decides to terminate the session, but it
                 // still have few messages on the queue for processing,
                 // it will first send us 'session-terminate' (we enter ENDED)
@@ -2574,74 +1401,4 @@ export default class JingleSessionPC extends JingleSession {
         };
     }
 
-    /**
-     * Returns the ice connection state for the peer connection.
-     * @returns the ice connection state for the peer connection.
-     */
-    getIceConnectionState() {
-        return this.peerconnection.getConnectionState();
-    }
-
-    /**
-     * Closes the peerconnection.
-     */
-    close() {
-        this.state = JingleSessionState.ENDED;
-        this.establishmentDuration = undefined;
-
-        if (this.peerconnection) {
-            this.peerconnection.onicecandidate = null;
-            this.peerconnection.oniceconnectionstatechange = null;
-            this.peerconnection.onnegotiationneeded = null;
-            this.peerconnection.onsignalingstatechange = null;
-        }
-
-        logger.debug(`${this} Clearing modificationQueue`);
-
-        // Remove any pending tasks from the queue
-        this.modificationQueue.clear();
-
-        logger.debug(`${this} Queued PC close task`);
-        this.modificationQueue.push(finishCallback => {
-            // The signaling layer will remove it's listeners
-            this.signalingLayer.setChatRoom(null);
-
-            // do not try to close if already closed.
-            this.peerconnection && this.peerconnection.close();
-            finishCallback();
-            logger.debug(`${this} PC close task done!`);
-        });
-
-        logger.debug(`${this} Shutdown modificationQueue!`);
-
-        // No more tasks can go in after the close task
-        this.modificationQueue.shutdown();
-    }
-
-    /**
-     * Converts to string with minor summary.
-     * @return {string}
-     */
-    toString() {
-        return `JingleSessionPC[session=${this.isP2P ? 'P2P' : 'JVB'},initiator=${this.isInitiator},sid=${this.sid}]`;
-    }
-
-    /**
-     * If the A/B test for suspend video is disabled according to the room's
-     * configuration, returns undefined. Otherwise returns a boolean which
-     * indicates whether the suspend video option should be enabled or disabled.
-     * @param {JingleSessionPCOptions} options - The config options.
-     */
-    _abtestSuspendVideoEnabled({ abTesting }) {
-        if (!abTesting || !abTesting.enableSuspendVideoTest) {
-            return;
-        }
-
-        // We want the two participants in a P2P call to agree on the value of
-        // the "suspend" option. We use the JID of the initiator, because it is
-        // both randomly selected and agreed upon by both participants.
-        const jid = this._getInitiatorJid();
-
-        return integerHash(jid) % 2 === 0;
-    }
 }

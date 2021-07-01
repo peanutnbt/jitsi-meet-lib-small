@@ -205,15 +205,15 @@ export default class Lobby {
                 });
         } else {
             // this should only be handled by those waiting in lobby
-            this.lobbyRoom.addEventListener(XMPPEvents.KICKED, isSelfPresence => {
-                if (isSelfPresence) {
-                    this.mainRoom.eventEmitter.emit(XMPPEvents.MUC_DENIED_ACCESS);
+            // this.lobbyRoom.addEventListener(XMPPEvents.KICKED, isSelfPresence => {
+            //     if (isSelfPresence) {
+            //         this.mainRoom.eventEmitter.emit(XMPPEvents.MUC_DENIED_ACCESS);
 
-                    this.lobbyRoom.clean();
+            //         this.lobbyRoom.clean();
 
-                    return;
-                }
-            });
+            //         return;
+            //     }
+            // });
 
             // As there is still reference of the main room
             // the invite will be detected and addressed to its eventEmitter, even though we are not in it

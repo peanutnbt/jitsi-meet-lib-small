@@ -397,19 +397,6 @@ export class TPCUtils {
     }
 
     /**
-    * Enables/disables audio transmission on the peer connection. When
-    * disabled the audio transceiver direction will be set to 'inactive'
-    * which means that no data will be sent nor accepted, but
-    * the connection should be kept alive.
-    * @param {boolean} active - true to enable audio media transmission or
-    * false to disable.
-    * @returns {void}
-    */
-    setAudioTransferActive(active) {
-        this.setMediaTransferActive(MediaType.AUDIO, active);
-    }
-
-    /**
      * Set the simulcast stream encoding properties on the RTCRtpSender.
      * @param {JitsiLocalTrack} track - the current track in use for which
      * the encodings are to be set.
@@ -429,47 +416,6 @@ export class TPCUtils {
         parameters.encodings = this._getStreamEncodings(track);
 
         return transceiver.sender.setParameters(parameters);
-    }
-
-    /**
-     * Enables/disables media transmission on the peerconnection by changing the direction
-     * on the transceiver for the specified media type.
-     * @param {String} mediaType - 'audio' or 'video'
-     * @param {boolean} active - true to enable media transmission or false
-     * to disable.
-     * @returns {void}
-     */
-    setMediaTransferActive(mediaType, active) {
-        const transceivers = this.pc.peerconnection.getTransceivers()
-            .filter(t => t.receiver && t.receiver.track && t.receiver.track.kind === mediaType);
-        const localTracks = this.pc.getLocalTracks(mediaType);
-
-        logger.info(`${this.pc} ${active ? 'Enabling' : 'Suspending'} ${mediaType} media transfer.`);
-        transceivers.forEach((transceiver, idx) => {
-            if (active) {
-                // The first transceiver is for the local track and only this one can be set to 'sendrecv'
-                if (idx === 0 && localTracks.length) {
-                    transceiver.direction = MediaDirection.SENDRECV;
-                } else {
-                    transceiver.direction = MediaDirection.RECVONLY;
-                }
-            } else {
-                transceiver.direction = MediaDirection.INACTIVE;
-            }
-        });
-    }
-
-    /**
-    * Enables/disables video media transmission on the peer connection. When
-    * disabled the SDP video media direction in the local SDP will be adjusted to
-    * 'inactive' which means that no data will be sent nor accepted, but
-    * the connection should be kept alive.
-    * @param {boolean} active - true to enable video media transmission or
-    * false to disable.
-    * @returns {void}
-    */
-    setVideoTransferActive(active) {
-        this.setMediaTransferActive(MediaType.VIDEO, active);
     }
 
     /**

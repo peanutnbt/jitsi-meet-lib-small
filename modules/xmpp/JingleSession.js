@@ -109,14 +109,8 @@ export default class JingleSession extends Listenable {
      * {@link #doInitialize} description for more details.
      */
     initialize(room, rtc, options) {
-        if (this.state !== null) {
-            const errmsg
-                = `attempt to initiate on session ${this.sid}
-                   in state ${this.state}`;
 
-            logger.error(errmsg);
-            throw new Error(errmsg);
-        }
+        console.log("----------Jingle Session initialize-----------")
         this.room = room;
         this.rtc = rtc;
         this.state = JingleSessionState.PENDING;
@@ -151,40 +145,6 @@ export default class JingleSession extends Listenable {
     getState() {
         return this.state;
     }
-
-    /* eslint-disable no-unused-vars, no-empty-function */
-
-    /**
-     * Handles an 'add-source' event.
-     *
-     * @param contents an array of Jingle 'content' elements.
-     */
-    addSources(contents) {}
-
-    /**
-     * Handles a 'remove-source' event.
-     *
-     * @param contents an array of Jingle 'content' elements.
-     */
-    removeSources(contents) {}
-
-    /**
-     * Terminates this Jingle session by sending session-terminate
-     * @param success a callback called once the 'session-terminate' packet has
-     * been acknowledged with RESULT.
-     * @param failure a callback called when either timeout occurs or ERROR
-     * response is received.
-     * @param {Object} options
-     * @param {string} [options.reason] XMPP Jingle error condition
-     * @param {string} [options.reasonDescription] some meaningful error message
-     * @param {boolean} [options.requestRestart=false] set to true to ask Jicofo to start a new session one this once is
-     * terminated.
-     * @param {boolean} [options.sendSessionTerminate=true] set to false to skip
-     * sending session-terminate. It may not make sense to send it if the XMPP
-     * connection has been closed already or if the remote peer has disconnected
-     */
-    terminate(success, failure, options) {}
-
     /**
      * Handles an offer from the remote peer (prepares to accept a session).
      * @param jingle the 'jingle' XML element.
@@ -195,13 +155,4 @@ export default class JingleSession extends Listenable {
      * than analysed in the code, as the error is unrecoverable anyway)
      */
     acceptOffer(jingle, success, failure) {}
-
-    /**
-     * Returns the JID of the initiator of the jingle session.
-     */
-    _getInitiatorJid() {
-        return this.isInitiator ? this.localJid : this.remoteJid;
-    }
-
-    /* eslint-enable no-unused-vars, no-empty-function */
 }

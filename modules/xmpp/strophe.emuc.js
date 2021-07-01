@@ -1,6 +1,3 @@
-/* global $ */
-
-import { getLogger } from 'jitsi-meet-logger';
 import { Strophe } from 'strophe.js';
 
 import XMPPEvents from '../../service/xmpp/XMPPEvents';
@@ -8,17 +5,13 @@ import XMPPEvents from '../../service/xmpp/XMPPEvents';
 import ChatRoom from './ChatRoom';
 import { ConnectionPluginListenable } from './ConnectionPlugin';
 
-const logger = getLogger(__filename);
 
 /**
  * MUC connection plugin.
  */
 export default class MucConnectionPlugin extends ConnectionPluginListenable {
-    /**
-     *
-     * @param xmpp
-     */
     constructor(xmpp) {
+        console.log("----------New MUC Plugin----------")
         super();
         this.xmpp = xmpp;
         this.rooms = {};
@@ -30,7 +23,6 @@ export default class MucConnectionPlugin extends ConnectionPluginListenable {
      */
     init(connection) {
         super.init(connection);
-
         // add handlers (just once)
         this.connection.addHandler(this.onPresence.bind(this), null,
             'presence', null, null, null, null);
@@ -40,10 +32,6 @@ export default class MucConnectionPlugin extends ConnectionPluginListenable {
             'presence', 'error', null);
         this.connection.addHandler(this.onMessage.bind(this), null,
             'message', null, null);
-        this.connection.addHandler(this.onMute.bind(this),
-            'http://jitsi.org/jitmeet/audio', 'iq', 'set', null, null);
-        this.connection.addHandler(this.onMuteVideo.bind(this),
-            'http://jitsi.org/jitmeet/video', 'iq', 'set', null, null);
     }
 
     /**
@@ -54,36 +42,24 @@ export default class MucConnectionPlugin extends ConnectionPluginListenable {
      */
     createRoom(jid, password, options) {
         const roomJid = Strophe.getBareJidFromJid(jid);
+        console.log("----------MUC Create Room----------")
 
         if (this.rooms[roomJid]) {
+            console.log("----------MUC Create Room----------: You are already in the room!")
             const errmsg = 'You are already in the room!';
-
-            logger.error(errmsg);
             throw new Error(errmsg);
         }
         this.rooms[roomJid] = new ChatRoom(this.connection, jid,
             password, this.xmpp, options);
-        this.eventEmitter.emit(
-            XMPPEvents.EMUC_ROOM_ADDED, this.rooms[roomJid]);
 
         return this.rooms[roomJid];
     }
-
-    /**
-     *
-     * @param jid
-     */
-    doLeave(jid) {
-        this.eventEmitter.emit(
-            XMPPEvents.EMUC_ROOM_REMOVED, this.rooms[jid]);
-        delete this.rooms[jid];
-    }
-
     /**
      *
      * @param pres
      */
     onPresence(pres) {
+        console.log("---------On presence-----------")
         const from = pres.getAttribute('from');
 
         // What is this for? A workaround for something?
@@ -156,42 +132,6 @@ export default class MucConnectionPlugin extends ConnectionPluginListenable {
         }
 
         room.onMessage(msg, from);
-
-        return true;
-    }
-
-    /**
-     * TODO: Document
-     * @param iq
-     */
-    onMute(iq) {
-        const from = iq.getAttribute('from');
-        const room = this.rooms[Strophe.getBareJidFromJid(from)];
-
-        // Returning false would result in the listener being deregistered by Strophe
-        if (!room) {
-            return true;
-        }
-
-        room.onMute(iq);
-
-        return true;
-    }
-
-    /**
-     * TODO: Document
-     * @param iq
-     */
-    onMuteVideo(iq) {
-        const from = iq.getAttribute('from');
-        const room = this.rooms[Strophe.getBareJidFromJid(from)];
-
-        // Returning false would result in the listener being deregistered by Strophe
-        if (!room) {
-            return true;
-        }
-
-        room.onMuteVideo(iq);
 
         return true;
     }

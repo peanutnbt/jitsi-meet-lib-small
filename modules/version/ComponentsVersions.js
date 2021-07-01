@@ -15,8 +15,6 @@ export default function ComponentsVersions(conference) {
     this.versions = {};
 
     this.conference = conference;
-    this.conference.addCommandListener(
-        'versions', this.processVersions.bind(this));
 }
 
 ComponentsVersions.prototype.processVersions

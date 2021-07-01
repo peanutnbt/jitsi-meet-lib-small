@@ -204,44 +204,6 @@ export default class JitsiRemoteTrack extends JitsiTrack {
     }
 
     /**
-     * Handles track play events.
-     */
-    _playCallback() {
-        const type = this.isVideoTrack() ? 'video' : 'audio';
-
-        const now = window.performance.now();
-
-        console.log(`(TIME) Render ${type}:\t`, now);
-        this.conference.getConnectionTimes()[`${type}.render`] = now;
-
-        // The conference can be started without calling GUM
-        // FIXME if there would be a module for connection times this kind
-        // of logic (gumDuration or ttfm) should end up there
-        const gumStart = window.connectionTimes['obtainPermissions.start'];
-        const gumEnd = window.connectionTimes['obtainPermissions.end'];
-        const gumDuration
-            = !isNaN(gumEnd) && !isNaN(gumStart) ? gumEnd - gumStart : 0;
-
-        // Subtract the muc.joined-to-session-initiate duration because jicofo
-        // waits until there are 2 participants to start Jingle sessions.
-        const ttfm = now
-            - (this.conference.getConnectionTimes()['session.initiate']
-                - this.conference.getConnectionTimes()['muc.joined'])
-            - gumDuration;
-
-        this.conference.getConnectionTimes()[`${type}.ttfm`] = ttfm;
-        console.log(`(TIME) TTFM ${type}:\t`, ttfm);
-
-        Statistics.sendAnalytics(createTtfmEvent(
-            {
-                'media_type': type,
-                muted: this.hasBeenMuted,
-                value: ttfm
-            }));
-
-    }
-
-    /**
      * Attach time to first media tracker only if there is conference and only
      * for the first element.
      * @param container the HTML container which can be 'video' or 'audio'
@@ -261,7 +223,6 @@ export default class JitsiRemoteTrack extends JitsiTrack {
             ttfmTrackerVideoAttached = true;
         }
 
-        container.addEventListener('canplay', this._playCallback.bind(this));
     }
 
     /**

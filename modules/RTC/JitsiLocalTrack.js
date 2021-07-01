@@ -25,7 +25,7 @@ import browser from '../browser';
 import Statistics from '../statistics/statistics';
 
 import JitsiTrack from './JitsiTrack';
-import RTCUtils from './RTCUtils';
+import RTC from './RTC';
 
 const logger = getLogger(__filename);
 
@@ -184,14 +184,14 @@ export default class JitsiLocalTrack extends JitsiTrack {
         // RTCEvents.AUDIO_OUTPUT_DEVICE_CHANGED event. This is different from
         // handling this event for remote tracks (which are handled in RTC.js),
         // because there might be local tracks not attached to a conference.
-        if (this.isAudioTrack() && RTCUtils.isDeviceChangeAvailable('output')) {
-            this._onAudioOutputDeviceChanged = this.setAudioOutput.bind(this);
-            RTCUtils.addListener(
-                RTCEvents.AUDIO_OUTPUT_DEVICE_CHANGED,
-                this._onAudioOutputDeviceChanged);
-        }
+        // if (this.isAudioTrack() && RTC.isDeviceChangeAvailable('output')) {
+        //     this._onAudioOutputDeviceChanged = this.setAudioOutput.bind(this);
+        //     RTC.addListener(
+        //         RTCEvents.AUDIO_OUTPUT_DEVICE_CHANGED,
+        //         this._onAudioOutputDeviceChanged);
+        // }
 
-        RTCUtils.addListener(RTCEvents.DEVICE_LIST_WILL_CHANGE, this._onDeviceListWillChange);
+        // RTC.addListener(RTCEvents.DEVICE_LIST_WILL_CHANGE, this._onDeviceListWillChange);
 
         this._initNoDataFromSourceHandlers();
     }
@@ -395,7 +395,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
         if (!conference) {
             this._switchStreamEffect(effect);
             if (this.isVideoTrack()) {
-                this.containers.forEach(cont => RTCUtils.attachMediaStream(cont, this.stream));
+                this.containers.forEach(cont => RTC.attachMediaStream(cont, this.stream));
             }
 
             return Promise.resolve();
@@ -408,7 +408,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
             .then(() => {
                 this._switchStreamEffect(effect);
                 if (this.isVideoTrack()) {
-                    this.containers.forEach(cont => RTCUtils.attachMediaStream(cont, this.stream));
+                    this.containers.forEach(cont => RTC.attachMediaStream(cont, this.stream));
                 }
 
                 return conference.addTrack(this);
@@ -526,11 +526,11 @@ export default class JitsiLocalTrack extends JitsiTrack {
                 facingMode: this.getCameraFacingMode()
             };
 
-            promise
-                = RTCUtils.obtainAudioAndVideoPermissions(Object.assign(
-                    {},
-                    streamOptions,
-                    { constraints: { video: this._constraints } }));
+            // promise
+            //     = RTC.obtainAudioAndVideoPermissions(Object.assign(
+            //         {},
+            //         streamOptions,
+            //         { constraints: { video: this._constraints } }));
 
             promise = promise.then(streamsInfo => {
                 // The track kind for presenter track is video as well.
@@ -558,7 +558,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
                 }
 
                 this.containers.map(
-                    cont => RTCUtils.attachMediaStream(cont, this.stream));
+                    cont => RTC.attachMediaStream(cont, this.stream));
 
                 return this._addStreamToConferenceAsUnmute();
             });
@@ -661,12 +661,12 @@ export default class JitsiLocalTrack extends JitsiTrack {
             this.detach();
         }
 
-        RTCUtils.removeListener(RTCEvents.DEVICE_LIST_WILL_CHANGE, this._onDeviceListWillChange);
+        // RTC.removeListener(RTCEvents.DEVICE_LIST_WILL_CHANGE, this._onDeviceListWillChange);
 
-        if (this._onAudioOutputDeviceChanged) {
-            RTCUtils.removeListener(RTCEvents.AUDIO_OUTPUT_DEVICE_CHANGED,
-                this._onAudioOutputDeviceChanged);
-        }
+        // if (this._onAudioOutputDeviceChanged) {
+        //     RTC.removeListener(RTCEvents.AUDIO_OUTPUT_DEVICE_CHANGED,
+        //         this._onAudioOutputDeviceChanged);
+        // }
 
         return promise.then(() => super.dispose());
     }
@@ -807,7 +807,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
     stopStream() {
         /**
          * Indicates that we are executing {@link #stopStream} i.e.
-         * {@link RTCUtils#stopMediaStream} for the <tt>MediaStream</tt>
+         * {@link RTC#stopMediaStream} for the <tt>MediaStream</tt>
          * associated with this <tt>JitsiTrack</tt> instance.
          *
          * @private
@@ -816,7 +816,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
         this._stopStreamInProgress = true;
 
         try {
-            RTCUtils.stopMediaStream(this.stream);
+            // RTC.stopMediaStream(this.stream);
         } finally {
             this._stopStreamInProgress = false;
         }

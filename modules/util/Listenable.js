@@ -26,6 +26,8 @@ export default class Listenable {
      * @returns {Function} - The unsubscribe function.
      */
     addListener(eventName, listener) {
+        if(eventName == 'connection.connectionEstablished')
+            console.log("----------Add event onConnectionSuccess---")
         this.eventEmitter.addListener(eventName, listener);
 
         return () => this.removeEventListener(eventName, listener);

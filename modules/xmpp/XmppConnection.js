@@ -1,15 +1,7 @@
-import { getLogger } from 'jitsi-meet-logger';
-import { $pres, Strophe } from 'strophe.js';
+import { Strophe } from 'strophe.js';
 import 'strophejs-plugin-stream-management';
 
 import Listenable from '../util/Listenable';
-
-import ResumeTask from './ResumeTask';
-import LastSuccessTracker from './StropheLastSuccess';
-import PingConnectionPlugin from './strophe.ping';
-
-const logger = getLogger(__filename);
-
 /**
  * The lib-jitsi-meet layer for {@link Strophe.Connection}.
  */
@@ -51,26 +43,14 @@ export default class XmppConnection extends Listenable {
      * if missing the serviceUrl url will be used.
      * @param {Object} [options.xmppPing] - The xmpp ping settings.
      */
-    constructor({ enableWebsocketResume, websocketKeepAlive, websocketKeepAliveUrl, serviceUrl, shard, xmppPing }) {
+    constructor({ serviceUrl }) {
         super();
-        this._options = {
-            enableWebsocketResume: typeof enableWebsocketResume === 'undefined' ? true : enableWebsocketResume,
-            pingOptions: xmppPing,
-            shard,
-            websocketKeepAlive: typeof websocketKeepAlive === 'undefined' ? 60 * 1000 : Number(websocketKeepAlive),
-            websocketKeepAliveUrl
-        };
 
         this._stropheConn = new Strophe.Connection(serviceUrl);
+        console.log("----------Strophe Connection----------")
         this._usesWebsocket = serviceUrl.startsWith('ws:') || serviceUrl.startsWith('wss:');
-
         // The default maxRetries is 5, which is too long.
         this._stropheConn.maxRetries = 3;
-
-        this._rawInputTracker = new LastSuccessTracker();
-        this._rawInputTracker.startTracking(this, this._stropheConn);
-
-        this._resumeTask = new ResumeTask(this._stropheConn);
 
         /**
          * @typedef DeferredSendIQ Object
@@ -85,16 +65,6 @@ export default class XmppConnection extends Listenable {
          * @private
          */
         this._deferredIQs = [];
-
-        // Ping plugin is mandatory for the Websocket mode to work correctly. It's used to detect when the connection
-        // is broken (WebSocket/TCP connection not closed gracefully).
-        this.addConnectionPlugin(
-            'ping',
-            new PingConnectionPlugin({
-                getTimeSinceLastServerResponse: () => this.getTimeSinceLastSuccess(),
-                onPingThresholdExceeded: () => this._onPingErrorThresholdExceeded(),
-                pingOptions: xmppPing
-            }));
 
         // tracks whether this is the initial connection or a reconnect
         this._oneSuccessfulConnect = false;
@@ -122,24 +92,6 @@ export default class XmppConnection extends Listenable {
     }
 
     /**
-     * A getter for the disconnecting state.
-     *
-     * @returns {boolean}
-     */
-    get disconnecting() {
-        return this._stropheConn.disconnecting === true;
-    }
-
-    /**
-     * A getter for the domain.
-     *
-     * @returns {string|null}
-     */
-    get domain() {
-        return this._stropheConn.domain;
-    }
-
-    /**
      * Tells if Websocket is used as the transport for the current XMPP connection. Returns true for Websocket or false
      * for BOSH.
      * @returns {boolean}
@@ -155,58 +107,6 @@ export default class XmppConnection extends Listenable {
      */
     get jid() {
         return this._stropheConn.jid;
-    }
-
-    /**
-     * Returns headers for the last BOSH response received.
-     *
-     * @returns {string}
-     */
-    get lastResponseHeaders() {
-        return this._stropheConn._proto && this._stropheConn._proto.lastResponseHeaders;
-    }
-
-    /**
-     * A getter for the logger plugin instance.
-     *
-     * @returns {*}
-     */
-    get logger() {
-        return this._stropheConn.logger;
-    }
-
-    /**
-     * A getter for the connection options.
-     *
-     * @returns {*}
-     */
-    get options() {
-        return this._stropheConn.options;
-    }
-
-    /**
-     * A getter for the domain to be used for ping.
-     */
-    get pingDomain() {
-        return this._options.pingOptions?.domain || this.domain;
-    }
-
-    /**
-     * A getter for the service URL.
-     *
-     * @returns {string}
-     */
-    get service() {
-        return this._stropheConn.service;
-    }
-
-    /**
-     * Returns the current connection status.
-     *
-     * @returns {Strophe.Status}
-     */
-    get status() {
-        return this._status;
     }
 
     /**
@@ -227,18 +127,8 @@ export default class XmppConnection extends Listenable {
      * @returns {void}
      */
     addHandler(...args) {
+        console.log("----------Add Handler----------")
         this._stropheConn.addHandler(...args);
-    }
-
-    /* eslint-disable max-params */
-    /**
-     * Wraps {@link Strophe.Connection.attach} method in order to intercept the connection status updates.
-     * See {@link Strophe.Connection.attach} for the params description.
-     *
-     * @returns {void}
-     */
-    attach(jid, sid, rid, callback, ...args) {
-        this._stropheConn.attach(jid, sid, rid, this._stropheConnectionCb.bind(this, callback), ...args);
     }
 
     /**
@@ -248,6 +138,7 @@ export default class XmppConnection extends Listenable {
      * @returns {void}
      */
     connect(jid, pass, callback, ...args) {
+        console.log("----------xmpp connect----------")
         this._stropheConn.connect(jid, pass, this._stropheConnectionCb.bind(this, callback), ...args);
     }
 
@@ -264,75 +155,9 @@ export default class XmppConnection extends Listenable {
      */
     _stropheConnectionCb(targetCallback, status, ...args) {
         this._status = status;
-
-        let blockCallback = false;
-
-        if (status === Strophe.Status.CONNECTED || status === Strophe.Status.ATTACHED) {
-            this._maybeEnableStreamResume();
-
-            // after connecting - immediately check whether shard changed,
-            // we need this only when using websockets as bosh checks headers from every response
-            if (this._usesWebsocket && this._oneSuccessfulConnect) {
-                this._keepAliveAndCheckShard();
-            }
-            this._oneSuccessfulConnect = true;
-
-            this._maybeStartWSKeepAlive();
-            this._processDeferredIQs();
-            this._resumeTask.cancel();
-            this.ping.startInterval(this._options.pingOptions?.domain || this.domain);
-        } else if (status === Strophe.Status.DISCONNECTED) {
-            this.ping.stopInterval();
-
-            // FIXME add RECONNECTING state instead of blocking the DISCONNECTED update
-            blockCallback = this._tryResumingConnection();
-            if (!blockCallback) {
-                clearTimeout(this._wsKeepAlive);
-            }
-        }
-
-        if (!blockCallback) {
-            targetCallback(status, ...args);
-            this.eventEmitter.emit(XmppConnection.Events.CONN_STATUS_CHANGED, status);
-        }
+        targetCallback(status, ...args);
+        this.eventEmitter.emit(XmppConnection.Events.CONN_STATUS_CHANGED, status);
     }
-
-    /**
-     * Clears the list of IQs and rejects deferred Promises with an error.
-     *
-     * @private
-     */
-    _clearDeferredIQs() {
-        for (const deferred of this._deferredIQs) {
-            deferred.reject(new Error('disconnect'));
-        }
-        this._deferredIQs = [];
-    }
-
-    /**
-     * The method is meant to be used for testing. It's a shortcut for closing the WebSocket.
-     *
-     * @returns {void}
-     */
-    closeWebsocket() {
-        if (this._stropheConn && this._stropheConn._proto) {
-            this._stropheConn._proto._closeSocket();
-            this._stropheConn._proto._onClose(null);
-        }
-    }
-
-    /**
-     * See {@link Strophe.Connection.disconnect}.
-     *
-     * @returns {void}
-     */
-    disconnect(...args) {
-        this._resumeTask.cancel();
-        clearTimeout(this._wsKeepAlive);
-        this._clearDeferredIQs();
-        this._stropheConn.disconnect(...args);
-    }
-
     /**
      * See {@link Strophe.Connection.flush}.
      *
@@ -341,130 +166,6 @@ export default class XmppConnection extends Listenable {
     flush(...args) {
         this._stropheConn.flush(...args);
     }
-
-    /**
-     * See {@link LastRequestTracker.getTimeSinceLastSuccess}.
-     *
-     * @returns {number|null}
-     */
-    getTimeSinceLastSuccess() {
-        return this._rawInputTracker.getTimeSinceLastSuccess();
-    }
-
-    /**
-     * See {@link LastRequestTracker.getLastFailedMessage}.
-     *
-     * @returns {string|null}
-     */
-    getLastFailedMessage() {
-        return this._rawInputTracker.getLastFailedMessage();
-    }
-
-    /**
-     * Requests a resume token from the server if enabled and all requirements are met.
-     *
-     * @private
-     */
-    _maybeEnableStreamResume() {
-        if (!this._options.enableWebsocketResume) {
-
-            return;
-        }
-
-        const { streamManagement } = this._stropheConn;
-
-        if (!this.isUsingWebSocket) {
-            logger.warn('Stream resume enabled, but WebSockets are not enabled');
-        } else if (!streamManagement) {
-            logger.warn('Stream resume enabled, but Strophe streamManagement plugin is not installed');
-        } else if (!streamManagement.isSupported()) {
-            logger.warn('Stream resume enabled, but XEP-0198 is not supported by the server');
-        } else if (!streamManagement.getResumeToken()) {
-            logger.info('Enabling XEP-0198 stream management');
-            streamManagement.enable(/* resume */ true);
-        }
-    }
-
-    /**
-     * Starts the Websocket keep alive if enabled.
-     *
-     * @private
-     * @returns {void}
-     */
-    _maybeStartWSKeepAlive() {
-        const { websocketKeepAlive } = this._options;
-
-        if (this._usesWebsocket && websocketKeepAlive > 0) {
-            this._wsKeepAlive || logger.info(`WebSocket keep alive interval: ${websocketKeepAlive}ms`);
-            clearTimeout(this._wsKeepAlive);
-
-            const intervalWithJitter = /* base */ websocketKeepAlive + /* jitter */ (Math.random() * 60 * 1000);
-
-            logger.debug(`Scheduling next WebSocket keep-alive in ${intervalWithJitter}ms`);
-
-            this._wsKeepAlive = setTimeout(
-                () => this._keepAliveAndCheckShard()
-                    .then(() => this._maybeStartWSKeepAlive()),
-                intervalWithJitter);
-        }
-    }
-
-    /**
-     * Do a http GET to the shard and if shard change will throw an event.
-     *
-     * @private
-     * @returns {Promise}
-     */
-    _keepAliveAndCheckShard() {
-        const { shard, websocketKeepAliveUrl } = this._options;
-        const url = websocketKeepAliveUrl ? websocketKeepAliveUrl
-            : this.service.replace('wss://', 'https://').replace('ws://', 'http://');
-
-        return fetch(url)
-            .then(response => {
-
-                // skips header checking if there is no info in options
-                if (!shard) {
-                    return;
-                }
-
-                const responseShard = response.headers.get('x-jitsi-shard');
-
-                if (responseShard !== shard) {
-                    logger.error(
-                        `Detected that shard changed from ${shard} to ${responseShard}`);
-                    this.eventEmitter.emit(XmppConnection.Events.CONN_SHARD_CHANGED);
-                }
-            })
-            .catch(error => {
-                logger.error(`Websocket Keep alive failed for url: ${url}`, { error });
-            });
-    }
-
-    /**
-     * Goes over the list of {@link DeferredSendIQ} tasks and sends them.
-     *
-     * @private
-     * @returns {void}
-     */
-    _processDeferredIQs() {
-        for (const deferred of this._deferredIQs) {
-            if (deferred.iq) {
-                clearTimeout(deferred.timeout);
-
-                const timeLeft = Date.now() - deferred.start;
-
-                this.sendIQ(
-                    deferred.iq,
-                    result => deferred.resolve(result),
-                    error => deferred.reject(error),
-                    timeLeft);
-            }
-        }
-
-        this._deferredIQs = [];
-    }
-
     /**
      * Send a stanza. This function is called to push data onto the send queue to go out over the wire.
      *
@@ -475,6 +176,7 @@ export default class XmppConnection extends Listenable {
         if (!this.connected) {
             throw new Error('Not connected');
         }
+        console.log("----------Send stanza----------")
         this._stropheConn.send(stanza);
     }
 
@@ -491,10 +193,9 @@ export default class XmppConnection extends Listenable {
     sendIQ(elem, callback, errback, timeout) {
         if (!this.connected) {
             errback('Not connected');
-
             return;
         }
-
+        // console.log("----------elem---------:", elem)
         return this._stropheConn.sendIQ(elem, callback, errback, timeout);
     }
 
@@ -535,18 +236,6 @@ export default class XmppConnection extends Listenable {
     }
 
     /**
-     * Called by the ping plugin when ping fails too many times.
-     *
-     * @returns {void}
-     */
-    _onPingErrorThresholdExceeded() {
-        if (this.isUsingWebSocket) {
-            logger.warn('Ping error threshold exceeded - killing the WebSocket');
-            this.closeWebsocket();
-        }
-    }
-
-    /**
      *  Helper function to send presence stanzas. The main benefit is for sending presence stanzas for which you expect
      *  a responding presence stanza with the same id (for example when leaving a chat room).
      *
@@ -564,62 +253,5 @@ export default class XmppConnection extends Listenable {
             return;
         }
         this._stropheConn.sendPresence(elem, callback, errback, timeout);
-    }
-
-    /**
-     * The method gracefully closes the BOSH connection by using 'navigator.sendBeacon'.
-     *
-     * @returns {boolean} - true if the beacon was sent.
-     */
-    sendUnavailableBeacon() {
-        if (!navigator.sendBeacon || this._stropheConn.disconnecting || !this._stropheConn.connected) {
-            return false;
-        }
-
-        this._stropheConn._changeConnectStatus(Strophe.Status.DISCONNECTING);
-        this._stropheConn.disconnecting = true;
-
-        const body = this._stropheConn._proto._buildBody()
-            .attrs({
-                type: 'terminate'
-            });
-        const pres = $pres({
-            xmlns: Strophe.NS.CLIENT,
-            type: 'unavailable'
-        });
-
-        body.cnode(pres.tree());
-
-        const res = navigator.sendBeacon(
-            this.service.indexOf('https://') === -1 ? `https:${this.service}` : this.service,
-            Strophe.serialize(body.tree()));
-
-        logger.info(`Successfully send unavailable beacon ${res}`);
-
-        this._stropheConn._proto._abortAllRequests();
-        this._stropheConn._doDisconnect();
-
-        return true;
-    }
-
-    /**
-     * Tries to use stream management plugin to resume dropped XMPP connection. The streamManagement plugin clears
-     * the resume token if any connection error occurs which would put it in unrecoverable state, so as long as
-     * the token is present it means the connection can be resumed.
-     *
-     * @private
-     * @returns {boolean}
-     */
-    _tryResumingConnection() {
-        const { streamManagement } = this._stropheConn;
-        const resumeToken = streamManagement && streamManagement.getResumeToken();
-
-        if (resumeToken) {
-            this._resumeTask.schedule();
-
-            return true;
-        }
-
-        return false;
     }
 }
