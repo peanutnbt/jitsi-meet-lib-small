@@ -1,9 +1,6 @@
 /* global __filename, RTCSessionDescription */
 
 import { Interop } from '@jitsi/sdp-interop';
-import * as MediaType from '../../service/RTC/MediaType';
-import RTCEvents from '../../service/RTC/RTCEvents';
-import * as VideoType from '../../service/RTC/VideoType';
 import LocalSdpMunger from '../sdp/LocalSdpMunger';
 import SDP from '../sdp/SDP';
 import SDPUtil from '../sdp/SDPUtil';
@@ -75,7 +72,6 @@ export default function TraceablePeerConnection(
      * The map holds remote tracks associated with this peer connection.
      * It maps user's JID to media type and remote track
      * (one track per media type per user's JID).
-     * @type {Map<string, Map<MediaType, JitsiRemoteTrack>>}
      */
     this.remoteTracks = new Map();
 
@@ -277,8 +273,6 @@ TraceablePeerConnection.prototype._remoteTrackAdded = function (stream, track, t
  * @param {string} ownerEndpointId the owner's endpoint ID (MUC nickname)
  * @param {MediaStream} stream the WebRTC stream instance
  * @param {MediaStreamTrack} track the WebRTC track instance
- * @param {MediaType} mediaType the track's type of the media
- * @param {VideoType} [videoType] the track's type of the video (if applicable)
  * @param {number} ssrc the track's main SSRC number
  * @param {boolean} muted the initial muted status
  */
@@ -302,7 +296,7 @@ TraceablePeerConnection.prototype._createRemoteTrack = function (ownerEndpointId
 
     remoteTracksMap.set(mediaType, remoteTrack);
     console.log("---------Emit REMOTE_TRACK_ADDED----------")
-    this.eventEmitter.emit(RTCEvents.REMOTE_TRACK_ADDED, remoteTrack, this);
+    this.eventEmitter.emit('rtc.remote_track_added', remoteTrack, this);
 };
 
 const getters = {
@@ -389,12 +383,12 @@ TraceablePeerConnection.prototype.setLocalDescription = function (description) {
 
                 if (localUfrag !== this.localUfrag) {
                     this.localUfrag = localUfrag;
-                    this.eventEmitter.emit(RTCEvents.LOCAL_UFRAG_CHANGED, this, localUfrag);
+                    this.eventEmitter.emit('rtc.local_ufrag_changed', this, localUfrag);
                 }
 
                 resolve();
             }, err => {
-                this.eventEmitter.emit(RTCEvents.SET_LOCAL_DESCRIPTION_FAILED, err, this);
+                this.eventEmitter.emit('rtc.set_local_description_failed', err, this);
                 reject(err);
             });
     });
@@ -416,11 +410,11 @@ TraceablePeerConnection.prototype.setRemoteDescription = function (description) 
 
                 if (remoteUfrag !== this.remoteUfrag) {
                     this.remoteUfrag = remoteUfrag;
-                    this.eventEmitter.emit(RTCEvents.REMOTE_UFRAG_CHANGED, this, remoteUfrag);
+                    this.eventEmitter.emit('rtc.remote_ufrag_changed', this, remoteUfrag);
                 }
                 resolve();
             }, err => {
-                this.eventEmitter.emit(RTCEvents.SET_REMOTE_DESCRIPTION_FAILED, err, this);
+                this.eventEmitter.emit('rtc.set_remote_description_failed', err, this);
                 reject(err);
             });
     });
@@ -445,7 +439,7 @@ TraceablePeerConnection.prototype._createOfferOrAnswer = function (
         }
     };
     const handleFailure = (err, rejectFn) => {
-        const eventType = isOffer ? RTCEvents.CREATE_OFFER_FAILED : RTCEvents.CREATE_ANSWER_FAILED;
+        const eventType = isOffer ? 'rtc.create_offer_failed' : 'rtc.create_answer_failed';
         this.eventEmitter.emit(eventType, err, this);
         rejectFn(err);
     };

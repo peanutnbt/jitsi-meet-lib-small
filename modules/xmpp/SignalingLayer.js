@@ -1,12 +1,11 @@
 
-import Listenable from '../../modules/util/Listenable';
+import Listenable from '../util/Listenable';
 
 /**
  * An object that carries the info about specific media type advertised by
  * participant in the signaling channel.
  * @typedef {Object} PeerMediaInfo
  * @property {boolean} muted indicates if the media is currently muted
- * @property {VideoType|undefined} videoType the type of the video if applicable
  */
 
 /**
@@ -31,7 +30,6 @@ export default class SignalingLayer extends Listenable {
      * the participant identified by the given MUC JID.
      * @param {string} owner the MUC jid of the participant for whom
      * {@link PeerMediaInfo} will be obtained.
-     * @param {MediaType} mediaType the type of the media for which presence
      * info will be obtained.
      * @return {PeerMediaInfo|null} presenceInfo an object with media presence
      * info or <tt>null</tt> either if there is no presence available for given

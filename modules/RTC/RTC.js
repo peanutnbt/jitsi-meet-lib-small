@@ -1,6 +1,4 @@
-import * as MediaType from '../../service/RTC/MediaType';
 import Listenable from '../util/Listenable';
-import { safeCounterIncrement } from '../util/MathUtil';
 import TraceablePeerConnection from './TraceablePeerConnection';
 
 let peerConnectionIdCounter = 0;
@@ -24,6 +22,15 @@ export default class RTC extends Listenable {
         }
     }
 
+    safeCounterIncrement(number) {
+        let nextValue = number;
+    
+        if (number >= Number.MAX_SAFE_INTEGER) {
+            nextValue = 0;
+        }
+    
+        return nextValue + 1;
+    }
     /**
      * Creates new <tt>TraceablePeerConnection</tt>
      * @param {SignalingLayer} signaling The signaling layer that will
@@ -42,7 +49,7 @@ export default class RTC extends Listenable {
         // This change is necessary for Unified plan to work properly on Chrome and Safari.
         iceConfig.bundlePolicy = 'max-bundle';
 
-        peerConnectionIdCounter = safeCounterIncrement(peerConnectionIdCounter);
+        peerConnectionIdCounter = this.safeCounterIncrement(peerConnectionIdCounter);
 
         const newConnection = new TraceablePeerConnection(this, peerConnectionIdCounter, signaling, iceConfig, pcConstraints, isP2P, options);
 
@@ -51,6 +58,7 @@ export default class RTC extends Listenable {
         return newConnection;
     }
 
+    
     /**
      * Returns the endpoint id for the local user.
      * @returns {string}
@@ -62,7 +70,6 @@ export default class RTC extends Listenable {
     /**
      * Returns the local tracks of the given media type, or all local tracks if
      * no specific type is given.
-     * @param {MediaType} [mediaType] Optional media type filter.
      * (audio or video).
      */
     getLocalTracks(mediaType) {

@@ -41,11 +41,11 @@ function onConnectionSuccess(e) {
     room = connection.initJitsiConference('1', {});
     console.log("----------1----------: ", room)
 
-    room.on(JitsiMeetJS.events.conference.TRACK_ADDED, onRemoteTrack);
+    room.on('conference.trackAdded', onRemoteTrack);
     console.log("----------2----------: ", room)
 
 
-    room.on(JitsiMeetJS.events.conference.USER_JOINED, id => {
+    room.on('conference.userJoined', id => {
         console.log("----------Listen User Joined: ", id)
         remoteTracks[id] = [];
     });
@@ -59,7 +59,7 @@ JitsiMeetJS.init({});
 connection = new JitsiMeetJS.JitsiConnection(options);
 
 connection.addEventListener(
-    JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED,
+    'connection.connectionEstablished',
     onConnectionSuccess);
 
 connection.connect();

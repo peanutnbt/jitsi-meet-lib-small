@@ -2,9 +2,7 @@
 
 import { getLogger } from 'jitsi-meet-logger';
 
-import * as MediaType from '../../service/RTC/MediaType';
-import * as SignalingEvents from '../../service/RTC/SignalingEvents';
-import SignalingLayer from '../../service/RTC/SignalingLayer';
+import SignalingLayer from './SignalingLayer';
 
 const logger = getLogger(__filename);
 
@@ -53,24 +51,23 @@ export default class SignalingLayerImpl extends SignalingLayer {
                 'videoType', this._videoTypeHandler);
         }
         if (room) {
-            // SignalingEvents
             this._audioMuteHandler = (node, from) => {
                 this.eventEmitter.emit(
-                    SignalingEvents.PEER_MUTED_CHANGED,
-                    from, MediaType.AUDIO, node.value === 'true');
+                    'signaling.peerMuted',
+                    from, 'audio', node.value === 'true');
             };
             room.addPresenceListener('audiomuted', this._audioMuteHandler);
 
             this._videoMuteHandler = (node, from) => {
                 this.eventEmitter.emit(
-                    SignalingEvents.PEER_MUTED_CHANGED,
-                    from, MediaType.VIDEO, node.value === 'true');
+                    'signaling.peerMuted',
+                    from, 'video', node.value === 'true');
             };
             room.addPresenceListener('videomuted', this._videoMuteHandler);
 
             this._videoTypeHandler = (node, from) => {
                 this.eventEmitter.emit(
-                    SignalingEvents.PEER_VIDEO_TYPE_CHANGED,
+                    'signaling.peerVideoType',
                     from, node.value);
             };
             room.addPresenceListener('videoType', this._videoTypeHandler);

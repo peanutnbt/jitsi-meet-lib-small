@@ -1,5 +1,4 @@
 import JitsiConference from './JitsiConference';
-import * as JitsiConnectionEvents from './JitsiConnectionEvents';
 import XMPP from './modules/xmpp/xmpp';
 
 /**
@@ -43,11 +42,6 @@ JitsiConnection.prototype.initJitsiConference = function(name, options) {
     });
 };
 
-/**
- * Subscribes the passed listener to the event.
- * @param event {JitsiConnectionEvents} the connection event.
- * @param listener {Function} the function that will receive the event
- */
 JitsiConnection.prototype.addEventListener = function(event, listener) {
     this.xmpp.addListener(event, listener);
 };

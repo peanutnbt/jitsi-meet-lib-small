@@ -1,8 +1,5 @@
 import { $msg, $pres, Strophe } from 'strophe.js';
 
-import * as JitsiTranscriptionStatus from '../../JitsiTranscriptionStatus';
-import * as MediaType from '../../service/RTC/MediaType';
-import XMPPEvents from '../../service/xmpp/XMPPEvents';
 import Listenable from '../util/Listenable';
 
 import XmppConnection from './XmppConnection';
@@ -113,7 +110,6 @@ export default class ChatRoom extends Listenable {
         this.lastPresences = {};
         this.participantPropertyListener = null;
 
-        this.transcriptionStatus = JitsiTranscriptionStatus.OFF;
     }
 
     /* eslint-enable max-params */
@@ -239,7 +235,7 @@ export default class ChatRoom extends Listenable {
             && this.options.hiddenDomain
             === jid.substring(jid.indexOf('@') + 1, jid.indexOf('/'));
 
-        this.eventEmitter.emit(XMPPEvents.PRESENCE_RECEIVED, {
+        this.eventEmitter.emit('xmpp.presence_received', {
             fromHiddenDomain: member.isHiddenDomain,
             presence: pres
         });
@@ -276,7 +272,7 @@ export default class ChatRoom extends Listenable {
                     this.sendPresence();
                 }
 
-                this.eventEmitter.emit(XMPPEvents.MUC_JOINED);
+                this.eventEmitter.emit('xmpp.muc_joined');
 
             }
         } else if (this.members[from] === undefined) {
@@ -289,7 +285,7 @@ export default class ChatRoom extends Listenable {
                 // services can be notified for that (currently identity is
                 // not used inside library)
                 this.eventEmitter.emit(
-                    XMPPEvents.MUC_MEMBER_JOINED,
+                    'xmpp.muc_member_joined',
                     from,
                     member.nick,
                     member.role,
@@ -335,7 +331,7 @@ export default class ChatRoom extends Listenable {
         }
 
         this.connection.send(msg);
-        this.eventEmitter.emit(XMPPEvents.SENDING_CHAT_MESSAGE, message);
+        this.eventEmitter.emit('xmpp.sending_chat_message', message);
     }
     /**
      *
@@ -378,8 +374,6 @@ export default class ChatRoom extends Listenable {
      * the participant identified by the given endpoint JID.
      * @param {string} endpointId the endpoint ID mapped to the participant
      * which corresponds to MUC nickname.
-     * @param {MediaType} mediaType the type of the media for which presence
-     * info will be obtained.
      * @return {PeerMediaInfo} presenceInfo an object with media presence
      * info or <tt>null</tt> either if there is no presence available or if
      * the media type given is invalid.
@@ -398,9 +392,9 @@ export default class ChatRoom extends Listenable {
         };
         let mutedNode = null;
 
-        if (mediaType === MediaType.AUDIO) {
+        if (mediaType === 'audio') {
             mutedNode = filterNodeFromPresenceJSON(pres, 'audiomuted');
-        } else if (mediaType === MediaType.VIDEO) {
+        } else if (mediaType === 'video') {
             mutedNode = filterNodeFromPresenceJSON(pres, 'videomuted');
             const codecTypeNode = filterNodeFromPresenceJSON(pres, 'jitsi_participant_codecType');
             const videoTypeNode = filterNodeFromPresenceJSON(pres, 'videoType');

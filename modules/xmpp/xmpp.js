@@ -1,8 +1,6 @@
 import { Strophe } from 'strophe.js';
 import 'strophejs-plugin-disco';
 
-import * as JitsiConnectionEvents from '../../JitsiConnectionEvents';
-import XMPPEvents from '../../service/xmpp/XMPPEvents';
 import Listenable from '../util/Listenable';
 import RandomUtil from '../util/RandomUtil';
 
@@ -114,9 +112,7 @@ export default class XMPP extends Listenable {
                 // .connected is true while connecting?
                 // this.connection.send($pres());
                 console.log("----------JID RESOURCE---------:", this.connection.jid)
-                this.eventEmitter.emit(
-                    JitsiConnectionEvents.CONNECTION_ESTABLISHED,
-                    Strophe.getResourceFromJid(this.connection.jid));
+                this.eventEmitter.emit('connection.connectionEstablished',Strophe.getResourceFromJid(this.connection.jid));
             }
         } 
     }

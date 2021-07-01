@@ -1,6 +1,5 @@
 import { $iq, Strophe } from 'strophe.js';
 
-import XMPPEvents from '../../service/xmpp/XMPPEvents';
 import SDP from '../sdp/SDP';
 import SDPUtil from '../sdp/SDPUtil';
 import AsyncQueue from '../util/AsyncQueue';
@@ -248,7 +247,7 @@ export default class JingleSessionPC extends JingleSession {
         this.peerconnection.oniceconnectionstatechange = () => {
             const now = window.performance.now();
             let isStable = false;
-            this.room.eventEmitter.emit(XMPPEvents.ICE_CONNECTION_STATE_CHANGED,this,this.peerconnection.iceConnectionState);
+            this.room.eventEmitter.emit('xmpp.ice_connection_state_changed',this,this.peerconnection.iceConnectionState);
             switch (this.peerconnection.iceConnectionState) {
                 case 'checking':
                     this._iceCheckingStartedTimestamp = now;
@@ -261,7 +260,7 @@ export default class JingleSessionPC extends JingleSession {
                         const usesTerminateForRestart = !this.options.enableIceRestart
 
                         if (this.isReconnect || usesTerminateForRestart) {
-                            this.room.eventEmitter.emit(XMPPEvents.CONNECTION_RESTORED, this);
+                            this.room.eventEmitter.emit('xmpp.connection.restored', this);
                         }
                     }
                     // Add a workaround for an issue on chrome in Unified plan when the local endpoint is the offerer.
@@ -282,7 +281,7 @@ export default class JingleSessionPC extends JingleSession {
                         const iceStarted = Math.min(this._iceCheckingStartedTimestamp, this._gatheringStartedTimestamp);
                         this.establishmentDuration = now - iceStarted;
                         this.wasConnected = true;
-                        this.room.eventEmitter.emit(XMPPEvents.CONNECTION_ESTABLISHED, this);
+                        this.room.eventEmitter.emit('xmpp.connection.connected', this);
                     }
                     this.isReconnect = false;
                     break;
@@ -615,8 +614,7 @@ export default class JingleSessionPC extends JingleSession {
 
                 // 'session-accept' is a critical timeout and we'll
                 // have to restart
-                this.room.eventEmitter.emit(
-                    XMPPEvents.SESSION_ACCEPT_TIMEOUT, this);
+                this.room.eventEmitter.emit('xmpp.session_accept_timeout', this);
             }),
             IQ_TIMEOUT);
 
@@ -677,7 +675,7 @@ export default class JingleSessionPC extends JingleSession {
     _renegotiate(optionalRemoteSdp) {
         if (this.peerconnection.signalingState === 'closed') {
             const error = new Error('Attempted to renegotiate in state closed');
-            this.room.eventEmitter.emit(XMPPEvents.RENEGOTIATION_FAILED, error, this);
+            this.room.eventEmitter.emit('xmpp.renegotiation_failed', error, this);
             return Promise.reject(error);
         }
 
@@ -685,7 +683,7 @@ export default class JingleSessionPC extends JingleSession {
 
         if (!remoteSdp) {
             const error = new Error(`Can not renegotiate without remote description, current state: ${this.state}`);
-            this.room.eventEmitter.emit(XMPPEvents.RENEGOTIATION_FAILED, error, this);
+            this.room.eventEmitter.emit('xmpp.renegotiation_failed', error, this);
             return Promise.reject(error);
         }
 

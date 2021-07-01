@@ -2,11 +2,6 @@ import { jitsiLocalStorage } from '@jitsi/js-utils';
 import { getLogger } from 'jitsi-meet-logger';
 
 const logger = getLogger(__filename);
-
-import UsernameGenerator from '../util/UsernameGenerator';
-
-let _callStatsUserName;
-
 let _machineId;
 
 /**
@@ -29,21 +24,21 @@ export default {
         this._storage = externalStorage || jitsiLocalStorage;
     },
 
-    /**
-     * Returns fake username for callstats
-     * @returns {string} fake username for callstats
-     */
-    get callStatsUserName() {
-        if (!_callStatsUserName) {
-            _callStatsUserName = this._storage.getItem('callStatsUserName');
-            if (!_callStatsUserName) {
-                _callStatsUserName = generateCallStatsUserName();
-                this._storage.setItem('callStatsUserName', _callStatsUserName);
-            }
-        }
+    // /**
+    //  * Returns fake username for callstats
+    //  * @returns {string} fake username for callstats
+    //  */
+    // get callStatsUserName() {
+    //     if (!_callStatsUserName) {
+    //         _callStatsUserName = this._storage.getItem('callStatsUserName');
+    //         if (!_callStatsUserName) {
+    //             _callStatsUserName = generateCallStatsUserName();
+    //             this._storage.setItem('callStatsUserName', _callStatsUserName);
+    //         }
+    //     }
 
-        return _callStatsUserName;
-    },
+    //     return _callStatsUserName;
+    // },
 
     /**
      * Returns current machine id.
@@ -88,18 +83,6 @@ export default {
         }
     }
 };
-
-/**
- * Generate fake username for callstats.
- * @returns {string} fake random username
- */
-function generateCallStatsUserName() {
-    const username = UsernameGenerator.generateUsername();
-
-    logger.log('generated callstats uid', username);
-
-    return username;
-}
 
 /**
  * Generate unique id.

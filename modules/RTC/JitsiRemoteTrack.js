@@ -1,5 +1,3 @@
-import * as JitsiTrackEvents from '../../JitsiTrackEvents';
-
 import JitsiTrack from './JitsiTrack';
 /**
  * Represents a single media track (either audio or video).
@@ -14,8 +12,6 @@ export default class JitsiRemoteTrack extends JitsiTrack {
      * @param {MediaStream} stream WebRTC MediaStream, parent of the track
      * @param {MediaStreamTrack} track underlying WebRTC MediaStreamTrack for
      *        the new JitsiRemoteTrack
-     * @param {MediaType} mediaType the type of the media
-     * @param {VideoType} videoType the type of the video if applicable
      * @param {number} ssrc the SSRC number of the Media Stream
      * @param {boolean} muted the initial muted state
      * @param {boolean} isP2P indicates whether or not this track belongs to a
@@ -49,27 +45,6 @@ export default class JitsiRemoteTrack extends JitsiTrack {
         // to detect ttfm events for startmuted conferences, as it can
         // significantly increase ttfm values
         this.hasBeenMuted = muted;
-    }
-    /**
-     * Sets current muted status and fires an events for the change.
-     * @param value the muted status.
-     */
-    setMute(value) {
-        if (this.muted === value) {
-            return;
-        }
-
-        if (value) {
-            this.hasBeenMuted = true;
-        }
-
-        // we can have a fake video stream
-        if (this.stream) {
-            this.stream.muted = value;
-        }
-
-        this.muted = value;
-        this.emit(JitsiTrackEvents.TRACK_MUTE_CHANGED, this);
     }
 
     /**

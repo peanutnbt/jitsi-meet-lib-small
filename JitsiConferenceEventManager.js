@@ -1,34 +1,3 @@
-/* global __filename */
-
-import { getLogger } from 'jitsi-meet-logger';
-import { Strophe } from 'strophe.js';
-
-import * as JitsiConferenceErrors from './JitsiConferenceErrors';
-import * as JitsiConferenceEvents from './JitsiConferenceEvents';
-import { SPEAKERS_AUDIO_LEVELS } from './modules/statistics/constants';
-import Statistics from './modules/statistics/statistics';
-import EventEmitterForwarder from './modules/util/EventEmitterForwarder';
-import * as MediaType from './service/RTC/MediaType';
-import RTCEvents from './service/RTC/RTCEvents';
-import VideoType from './service/RTC/VideoType';
-import AuthenticationEvents
-    from './service/authentication/AuthenticationEvents';
-import {
-    ACTION_JINGLE_SA_TIMEOUT,
-    createBridgeDownEvent,
-    createConnectionStageReachedEvent,
-    createFocusLeftEvent,
-    createJingleEvent,
-    createRemotelyMutedEvent
-} from './service/statistics/AnalyticsEvents';
-import XMPPEvents from './service/xmpp/XMPPEvents';
-
-const logger = getLogger(__filename);
-
-/**
- * Setups all event listeners related to conference
- * @param conference {JitsiConference} the conference
- */
 export default function JitsiConferenceEventManager(conference) {
     this.conference = conference;
     this.xmppListeners = {};
@@ -42,31 +11,19 @@ JitsiConferenceEventManager.prototype.setupChatRoomListeners = function() {
     const conference = this.conference;
     const chatRoom = conference.room;
     // send some analytics events
-    chatRoom.addListener(XMPPEvents.MUC_JOINED,
+    chatRoom.addListener('xmpp.muc_joined',
         () => {
             this.conference._onMucJoined();
             this.conference.isJvbConnectionInterrupted = false;
             // TODO: Move all of the 'connectionTimes' logic to its own module.
             Object.keys(chatRoom.connectionTimes).forEach(key => {
-                const event
-                    = createConnectionStageReachedEvent(
-                        `conference_${key}`,
-                        { value: chatRoom.connectionTimes[key] });
-
-                Statistics.sendAnalytics(event);
             });
             // TODO: Move all of the 'connectionTimes' logic to its own module.
             Object.keys(chatRoom.xmpp.connectionTimes).forEach(key => {
-                const event
-                    = createConnectionStageReachedEvent(
-                        `xmpp_${key}`,
-                        { value: chatRoom.xmpp.connectionTimes[key] });
-
-                Statistics.sendAnalytics(event);
             });
         });
 
-    chatRoom.addListener(XMPPEvents.MUC_MEMBER_JOINED,
+    chatRoom.addListener('xmpp.muc_member_joined',
         conference.onMemberJoined.bind(conference));
 };
 
@@ -79,7 +36,7 @@ JitsiConferenceEventManager.prototype.setupRTCListeners = function() {
     const rtc = conference.rtc;
 
     rtc.addListener(
-        RTCEvents.REMOTE_TRACK_ADDED,
+        'rtc.remote_track_added',
         conference.onRemoteTrackAdded.bind(conference));
 
 };
@@ -107,13 +64,13 @@ JitsiConferenceEventManager.prototype.setupXMPPListeners = function() {
     const conference = this.conference;
 
     this._addConferenceXMPPListener(
-        XMPPEvents.CALL_INCOMING,
+        'xmpp.callincoming.jingle',
         conference.onIncomingCall.bind(conference));
     this._addConferenceXMPPListener(
-        XMPPEvents.CALL_ACCEPTED,
+        'xmpp.callaccepted.jingle',
         conference.onCallAccepted.bind(conference));
     this._addConferenceXMPPListener(
-        XMPPEvents.TRANSPORT_INFO,
+        'xmpp.transportinfo.jingle',
         conference.onTransportInfo.bind(conference));
 };
 

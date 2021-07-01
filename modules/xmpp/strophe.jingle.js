@@ -1,7 +1,5 @@
 import { $iq, Strophe } from 'strophe.js';
 
-import XMPPEvents from '../../service/xmpp/XMPPEvents';
-
 import ConnectionPlugin from './ConnectionPlugin';
 import JingleSessionPC from './JingleSessionPC';
 export default class JingleConnectionPlugin extends ConnectionPlugin {
@@ -69,8 +67,7 @@ export default class JingleConnectionPlugin extends ConnectionPlugin {
 
                 // this.sessions[sess.sid] = sess;
 
-                this.eventEmitter.emit(XMPPEvents.CALL_INCOMING,
-                    sess, $(iq).find('>jingle'), now);
+                this.eventEmitter.emit('xmpp.callincoming.jingle', sess, $(iq).find('>jingle'), now);
                 break;
             }
         }

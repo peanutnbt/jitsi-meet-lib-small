@@ -1,15 +1,5 @@
 
 import { Strophe } from 'strophe.js';
-
-
-import * as JitsiConferenceEvents from './JitsiConferenceEvents';
-import { ParticipantConnectionStatus }
-    from './modules/connectivity/ParticipantConnectionStatus';
-import * as MediaType from './service/RTC/MediaType';
-
-/**
- * Represents a participant in (i.e. a member of) a conference.
- */
 export default class JitsiParticipant {
 
     /* eslint-disable max-params */
@@ -40,7 +30,6 @@ export default class JitsiParticipant {
         this._status = status;
         this._hidden = hidden;
         this._statsID = statsID;
-        this._connectionStatus = ParticipantConnectionStatus.ACTIVE;
         this._properties = {};
         this._identity = identity;
         this._isReplacing = isReplacing;
@@ -77,49 +66,12 @@ export default class JitsiParticipant {
         return (
             this.getTracks().some(
                 jitsiTrack =>
-                    jitsiTrack.getType() === MediaType.VIDEO
+                    jitsiTrack.getType() === 'video'
                         && jitsiTrack.isWebRTCTrackMuted()));
     }
 
-    /**
-     * Updates participant's connection status.
-     * @param {string} state the current participant connection state.
-     * {@link ParticipantConnectionStatus}.
-     * @private
-     */
-    _setConnectionStatus(status) {
-        this._connectionStatus = status;
-    }
-
-    /**
-     * Return participant's connectivity status.
-     *
-     * @returns {string} the connection status
-     * <tt>ParticipantConnectionStatus</tt> of the user.
-     * {@link ParticipantConnectionStatus}.
-     */
     getConnectionStatus() {
         return this._connectionStatus;
-    }
-
-    /**
-     * Sets the value of a property of this participant, and fires an event if
-     * the value has changed.
-     * @name the name of the property.
-     * @value the value to set.
-     */
-    setProperty(name, value) {
-        const oldValue = this._properties[name];
-
-        if (value !== oldValue) {
-            this._properties[name] = value;
-            this._conference.eventEmitter.emit(
-                JitsiConferenceEvents.PARTICIPANT_PROPERTY_CHANGED,
-                this,
-                name,
-                oldValue,
-                value);
-        }
     }
 
     /**
@@ -131,7 +83,6 @@ export default class JitsiParticipant {
     }
 
     /**
-     * @param {MediaType} mediaType
      * @returns {Array.<JitsiTrack>} an array of media tracks for this
      * participant, for given media type.
      */
@@ -210,15 +161,10 @@ export default class JitsiParticipant {
      * @returns {Boolean} Whether this participant has muted their audio.
      */
     isAudioMuted() {
-        return this._isMediaTypeMuted(MediaType.AUDIO);
+        return this._isMediaTypeMuted('audio');
     }
 
     /**
-     * Determines whether all JitsiTracks which are of a specific MediaType and
-     * which belong to this JitsiParticipant are muted.
-     *
-     * @param {MediaType} mediaType - The MediaType of the JitsiTracks to be
-     * checked.
      * @private
      * @returns {Boolean} True if all JitsiTracks which are of the specified
      * mediaType and which belong to this JitsiParticipant are muted; otherwise,
@@ -235,7 +181,7 @@ export default class JitsiParticipant {
      * @returns {Boolean} Whether this participant has muted their video.
      */
     isVideoMuted() {
-        return this._isMediaTypeMuted(MediaType.VIDEO);
+        return this._isMediaTypeMuted('video');
     }
 
     /**

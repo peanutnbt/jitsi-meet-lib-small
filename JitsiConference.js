@@ -2,15 +2,11 @@ import EventEmitter from 'events';
 import { Strophe } from 'strophe.js';
 
 import JitsiConferenceEventManager from './JitsiConferenceEventManager';
-import * as JitsiConferenceEvents from './JitsiConferenceEvents';
 import JitsiParticipant from './JitsiParticipant';
-import JitsiTrackError from './JitsiTrackError';
-import * as JitsiTrackErrors from './JitsiTrackErrors';
 import RTC from './modules/RTC/RTC';
 import {
     FEATURE_JIGASI,
 } from './modules/xmpp/xmpp';
-import VideoType from './service/RTC/VideoType';
 
 /**
  * Creates a JitsiConference object with the given name and properties.
@@ -112,15 +108,6 @@ JitsiConference.prototype.join = function (password, replaceParticipant = false)
     }
 };
 
-/**
- * Attaches a handler for events(For example - "participant joined".) in the
- * conference. All possible event are defined in JitsiConferenceEvents.
- * @param eventId the event ID.
- * @param handler handler for the event.
- *
- * Note: consider adding eventing functionality by extending an EventEmitter
- * impl, instead of rolling ourselves
- */
 JitsiConference.prototype.on = function (eventId, handler) {
     if (this.eventEmitter) {
         this.eventEmitter.on(eventId, handler);
@@ -155,20 +142,6 @@ JitsiConference.prototype.removeEventListener = JitsiConference.prototype.off;
  * @returns {Promise} resolves when the replacement is finished
  */
 JitsiConference.prototype.replaceTrack = function (oldTrack, newTrack) {
-    // First do the removal of the oldTrack at the JitsiConference level
-    if (oldTrack) {
-        if (oldTrack.disposed) {
-            return Promise.reject(
-                new JitsiTrackError(JitsiTrackErrors.TRACK_IS_DISPOSED));
-        }
-    }
-    if (newTrack) {
-        if (newTrack.disposed) {
-            return Promise.reject(
-                new JitsiTrackError(JitsiTrackErrors.TRACK_IS_DISPOSED));
-        }
-    }
-
     // Now replace the stream at the lower levels
     return this._doReplaceTrack(oldTrack, newTrack)
         .then(() => {
@@ -182,7 +155,7 @@ JitsiConference.prototype.replaceTrack = function (oldTrack, newTrack) {
                 this._setupNewTrack(newTrack);
                 newTrack.isVideoTrack() && this.rtc.setVideoType(newTrack.getVideoType());
             } else {
-                oldTrack && oldTrack.isVideoTrack() && this.rtc.setVideoType(VideoType.NONE);
+                oldTrack && oldTrack.isVideoTrack() && this.rtc.setVideoType('none');
             }
 
 
@@ -225,7 +198,7 @@ JitsiConference.prototype._doReplaceTrack = function (oldTrack, newTrack) {
  */
 JitsiConference.prototype._setupNewTrack = function (newTrack) {
     if (newTrack.isAudioTrack() || (newTrack.isVideoTrack()
-        && newTrack.videoType !== VideoType.DESKTOP)) {
+        && newTrack.videoType !== 'desktop')) {
         // Report active device to statistics
         const devices = RTC.getCurrentlyAvailableMediaDevices();
     }
@@ -234,7 +207,7 @@ JitsiConference.prototype._setupNewTrack = function (newTrack) {
 
     newTrack._setConference(this);
 
-    this.eventEmitter.emit(JitsiConferenceEvents.TRACK_ADDED, newTrack);
+    this.eventEmitter.emit('conference.trackAdded', newTrack);
 };
 
 /**
@@ -285,7 +258,7 @@ JitsiConference.prototype.onMemberJoined = function (
 
     this.participants[id] = participant;
     console.log("----------Emit User Joined---------")
-    this.eventEmitter.emit(JitsiConferenceEvents.USER_JOINED,id,participant);
+    this.eventEmitter.emit('conference.userJoined',id,participant);
 
     // maybeStart only if we had finished joining as then we will have information for the number of participants
     if (this.room && this.room.joined) {
@@ -335,7 +308,7 @@ JitsiConference.prototype.onRemoteTrackAdded = function (track) {
 
     const emitter = this.eventEmitter;
 
-    emitter.emit(JitsiConferenceEvents.TRACK_ADDED, track);
+    emitter.emit('conference.trackAdded', track);
 };
 
 /**
@@ -348,7 +321,7 @@ JitsiConference.prototype.onRemoteTrackAdded = function (track) {
 JitsiConference.prototype.onCallAccepted = function (session, answer) {
     if (this.p2pJingleSession === session) {
         this.p2pJingleSession.setAnswer(answer);
-        this.eventEmitter.emit(JitsiConferenceEvents._MEDIA_SESSION_STARTED, this.p2pJingleSession);
+        this.eventEmitter.emit('conference.media_session.started', this.p2pJingleSession);
     }
 };
 
@@ -394,13 +367,9 @@ JitsiConference.prototype._acceptJvbIncomingCall = function (jingleSession,jingl
         jingleOffer,
         () => {
 
-            this.eventEmitter.emit(
-                JitsiConferenceEvents._MEDIA_SESSION_STARTED,
-                jingleSession);
+            this.eventEmitter.emit('conference.media_session.started',jingleSession);
             if (!this.isP2PActive()) {
-                this.eventEmitter.emit(
-                    JitsiConferenceEvents._MEDIA_SESSION_ACTIVE_CHANGED,
-                    jingleSession);
+                this.eventEmitter.emit('conference.media_session.active_changed',jingleSession);
             }
         },
         error => { }
@@ -479,9 +448,7 @@ JitsiConference.prototype._acceptP2PIncomingCall = function (
     this.p2pJingleSession.acceptOffer(
         jingleOffer,
         () => {
-            this.eventEmitter.emit(
-                JitsiConferenceEvents._MEDIA_SESSION_STARTED,
-                this.p2pJingleSession);
+            this.eventEmitter.emit('conference.media_session.started',this.p2pJingleSession);
         },
         error => { });
 };

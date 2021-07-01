@@ -2,10 +2,6 @@
 import EventEmitter from 'events';
 import { getLogger } from 'jitsi-meet-logger';
 
-import * as JitsiTrackEvents from '../../JitsiTrackEvents';
-import * as MediaType from '../../service/RTC/MediaType';
-import browser from '../browser';
-
 import RTC from './RTC';
 
 const logger = getLogger(__filename);
@@ -34,7 +30,6 @@ export default class JitsiTrack extends EventEmitter {
      * @param streamInactiveHandler the function that will handle
      *        onended/oninactive events of the stream.
      * @param trackMediaType the media type of the JitsiTrack
-     * @param videoType the VideoType for this track if any
      */
     constructor(
             conference,
@@ -91,11 +86,11 @@ export default class JitsiTrack extends EventEmitter {
      * @param {Function} handler the handler
      */
     _addMediaStreamInactiveHandler(handler) {
-        if (browser.isFirefox()) {
-            this.track.onended = handler;
-        } else {
+        // if (browser.isFirefox()) {
+        //     this.track.onended = handler;
+        // } else {
             this.stream.oninactive = handler;
-        }
+        // }
     }
 
     /**
@@ -192,7 +187,7 @@ export default class JitsiTrack extends EventEmitter {
      * Check if this is an audio track.
      */
     isAudioTrack() {
-        return this.getType() === MediaType.AUDIO;
+        return this.getType() === 'audio';
     }
 
     /**
@@ -209,7 +204,7 @@ export default class JitsiTrack extends EventEmitter {
      * Check if this is a video track.
      */
     isVideoTrack() {
-        return this.getType() === MediaType.VIDEO;
+        return this.getType() === 'video';
     }
 
     /**
@@ -283,7 +278,6 @@ export default class JitsiTrack extends EventEmitter {
     }
 
     /**
-     * Eventually will trigger RTCEvents.TRACK_ATTACHED event.
      * @param container the video/audio container to which this stream is
      *        attached and for which event will be fired.
      * @private
@@ -424,44 +418,6 @@ export default class JitsiTrack extends EventEmitter {
     }
 
     /**
-     * Sets the audio level for the stream
-     * @param {number} audioLevel value between 0 and 1
-     * @param {TraceablePeerConnection} [tpc] the peerconnection instance which
-     * is source for the audio level. It can be <tt>undefined</tt> for
-     * a local track if the audio level was measured outside of the
-     * peerconnection (see /modules/statistics/LocalStatsCollector.js).
-     */
-    setAudioLevel(audioLevel, tpc) {
-        let newAudioLevel = audioLevel;
-
-        // When using getSynchornizationSources on the audio receiver to gather audio levels for
-        // remote tracks, browser reports last known audio levels even when the remote user is
-        // audio muted, we need to reset the value to zero here so that the audio levels are cleared.
-        // Remote tracks have the tpc info present while local tracks do not.
-        if (browser.supportsReceiverStats() && typeof tpc !== 'undefined' && this.isMuted()) {
-            newAudioLevel = 0;
-        }
-
-        if (this.audioLevel !== newAudioLevel) {
-            this.audioLevel = newAudioLevel;
-            this.emit(
-                JitsiTrackEvents.TRACK_AUDIO_LEVEL_CHANGED,
-                newAudioLevel,
-                tpc);
-
-        // LocalStatsCollector reports a value of 0.008 for muted mics
-        // and a value of 0 when there is no audio input.
-        } else if (this.audioLevel === 0
-            && newAudioLevel === 0
-            && this.isLocal()
-            && !this.isWebRTCTrackMuted()) {
-            this.emit(
-                JitsiTrackEvents.NO_AUDIO_INPUT,
-                newAudioLevel);
-        }
-    }
-
-    /**
      * Returns the msid of the stream attached to the JitsiTrack object or null
      * if no stream is attached.
      */
@@ -470,47 +426,5 @@ export default class JitsiTrack extends EventEmitter {
         const trackId = this.getTrackId();
 
         return streamId && trackId ? `${streamId} ${trackId}` : null;
-    }
-
-    /**
-     * Sets new audio output device for track's DOM elements. Video tracks are
-     * ignored.
-     * @param {string} audioOutputDeviceId - id of 'audiooutput' device from
-     *      navigator.mediaDevices.enumerateDevices(), '' for default device
-     * @emits JitsiTrackEvents.TRACK_AUDIO_OUTPUT_CHANGED
-     * @returns {Promise}
-     */
-    setAudioOutput(audioOutputDeviceId) {
-        if (!RTC.isDeviceChangeAvailable('output')) {
-            return Promise.reject(
-                new Error('Audio output device change is not supported'));
-        }
-
-        // All audio communication is done through audio tracks, so ignore
-        // changing audio output for video tracks at all.
-        if (this.isVideoTrack()) {
-            return Promise.resolve();
-        }
-
-        return (
-            Promise.all(
-                this.containers.map(
-                    element =>
-                        element.setSinkId(audioOutputDeviceId)
-                            .catch(error => {
-                                logger.warn(
-                                    'Failed to change audio output device on'
-                                        + ' element. Default or previously set'
-                                        + ' audio output device will be used.',
-                                    element,
-                                    error);
-                                throw error;
-                            }))
-            )
-                .then(() => {
-                    this.emit(
-                        JitsiTrackEvents.TRACK_AUDIO_OUTPUT_CHANGED,
-                        audioOutputDeviceId);
-                }));
     }
 }
