@@ -19,8 +19,8 @@ export default class Caps extends Listenable {
         // We keep track of features added outside the library and we publish them
         // in the presence of the participant for simplicity, avoiding the disco info request-response.
 
-        Strophe.addNamespace('CAPS', 'caps');
-        this.disco.addFeature(Strophe.NS.CAPS);
+        // Strophe.addNamespace('CAPS', 'caps');
+        // this.disco.addFeature(Strophe.NS.CAPS);
     }
 
     /**

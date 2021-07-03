@@ -1,6 +1,7 @@
 /* global __filename, RTCSessionDescription */
 
-import { Interop } from '@jitsi/sdp-interop';
+// import { Interop } from '@jitsi/sdp-interop';
+import { Interop } from './interop';
 import LocalSdpMunger from '../sdp/LocalSdpMunger';
 import SDP from '../sdp/SDP';
 import SDPUtil from '../sdp/SDPUtil';
@@ -157,6 +158,106 @@ export default function TraceablePeerConnection(
         }
     };
 
+
+    this.toPlanB = (description) => {
+        if (!description || typeof description.sdp !== 'string') {
+            console.warn('An empty description was passed as an argument.');
+
+            return description;
+        }
+
+        // Objectify the SDP for easier manipulation.
+        const session = transform.parse(description.sdp);
+
+        // If the SDP contains no media, there's nothing to transform.
+        if (!session.media || !session.media.length) {
+            console.warn('The description has no media.');
+
+            return description;
+        }
+
+        // Make sure this is a unified plan sdp
+        if (session.media.every(m => PLAN_B_MIDS.indexOf(m.mid) !== -1)) {
+            console.warn('The description does not look like unified plan sdp');
+
+            return description;
+        }
+
+        const media = {};
+        const sessionMedia = session.media;
+
+        session.media = [];
+        sessionMedia.forEach(mLine => {
+            const type = mLine.type;
+
+            if (type === 'application') {
+                mLine.mid = 'data';
+                media[mLine.mid] = mLine;
+
+                return;
+            }
+            if (typeof media[type] === 'undefined') {
+                const bLine = clonedeep(mLine);
+
+                // Copy the msid attribute to all the ssrcs if they belong to the same source group
+                if (bLine.sources && Array.isArray(bLine.sources)) {
+                    bLine.sources.forEach(source => {
+                        mLine.msid ? source.msid = mLine.msid : delete source.msid;
+                    });
+                }
+
+                // Do not signal the FID groups if there is no msid attribute present
+                // on the sources as sesison-accept with this source info will fail strophe
+                // validation and the session will not be established. This behavior is seen
+                // on Firefox (with RTX enabled) when no video source is added at the join time.
+                // FF generates two recvonly ssrcs with no msid and a corresponding FID group in
+                // this case.
+                if (!bLine.ssrcGroups || !mLine.msid) {
+                    bLine.ssrcGroups = [];
+                }
+                delete bLine.msid;
+                bLine.mid = type;
+                media[type] = bLine;
+            } else if (mLine.msid) {
+                // Add sources and source-groups to the existing m-line of the same media type.
+                if (mLine.sources && Array.isArray(mLine.sources)) {
+                    media[type].sources = media[type].sources.concat(mLine.sources);
+                }
+                if (typeof mLine.ssrcGroups !== 'undefined' && Array.isArray(mLine.ssrcGroups)) {
+                    media[type].ssrcGroups = media[type].ssrcGroups.concat(mLine.ssrcGroups);
+                }
+            }
+        });
+        session.media = Object.values(media);
+
+        // Bundle the media only if it is active.
+        const bundle = [];
+
+        Object.values(media).forEach(mline => {
+            if (mline.direction !== 'inactive') {
+                bundle.push(mline.mid);
+            }
+        });
+
+        // We regenerate the BUNDLE group with the new mids.
+        session.groups.forEach(group => {
+            if (group.type === 'BUNDLE') {
+                group.mids = bundle.join(' ');
+            }
+        });
+
+        // msid semantic
+        session.msidSemantic = {
+            semantic: 'WMS',
+            token: '*'
+        };
+        const resStr = transform.write(session);
+
+        return new RTCSessionDescription({
+            type: description.type,
+            sdp: resStr
+        });
+    }
 }
 
 /**
@@ -316,6 +417,7 @@ const getters = {
         // transform the SDP to Plan B first.
         if (this._usesUnifiedPlan && !this.isP2P) {
             desc = this.interop.toPlanB(desc);
+            // desc = this.toPlanB(desc);
         }
         // See the method's doc for more info about this transformation.
         desc = this.localSdpMunger.transformStreamIdentifiers(desc);
@@ -324,11 +426,9 @@ const getters = {
     },
     remoteDescription() {
         let desc = this.peerconnection.remoteDescription;
-
         if (!desc) {
             return {};
         }
-
         if (this._usesUnifiedPlan) {
             desc = this.interop.toPlanB(desc);
         }

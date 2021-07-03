@@ -1,8 +1,5 @@
 import { $iq } from 'strophe.js';
 
-import Settings from '../settings/Settings';
-
-
 /**
  *
  * @param roomName
@@ -51,8 +48,11 @@ Moderator.prototype.createConferenceIq = function() {
         type: 'set' });
 
     // Session Id used for authentication
-    const { sessionId } = Settings;
-    const machineUID = Settings.machineId;
+    // const { sessionId } = Settings;
+    // const machineUID = Settings.machineId;
+    const { sessionId } = 1;
+    const machineUID = 2;
+
     const config = this.options.conference;
 
     elem.c('conference', {
@@ -74,42 +74,6 @@ Moderator.prototype.createConferenceIq = function() {
     elem.up();
 
     return elem;
-};
-
-
-Moderator.prototype.parseSessionId = function(resultIq) {
-    // eslint-disable-next-line newline-per-chained-call
-    const sessionId = $(resultIq).find('conference').attr('session-id');
-
-    if (sessionId) {
-        Settings.sessionId = sessionId;
-    }
-};
-
-Moderator.prototype.parseConfigOptions = function(resultIq) {
-    // eslint-disable-next-line newline-per-chained-call
-    this.setFocusUserJid($(resultIq).find('conference').attr('focusjid'));
-
-    const authenticationEnabled
-        = $(resultIq).find(
-            '>conference>property'
-            + '[name=\'authentication\'][value=\'true\']').length > 0;
-
-    this.externalAuthEnabled = $(resultIq).find(
-        '>conference>property'
-            + '[name=\'externalAuth\'][value=\'true\']').length > 0;
-
-    if (!this.externalAuthEnabled) {
-        // We expect to receive sessionId in 'internal' authentication mode
-        this.parseSessionId(resultIq);
-    }
-
-    // Check if jicofo has jigasi support enabled.
-    if ($(resultIq).find(
-        '>conference>property'
-        + '[name=\'sipGatewayEnabled\'][value=\'true\']').length) {
-        this.sipGatewayEnabled = true;
-    }
 };
 
 // FIXME We need to show the fact that we're waiting for the focus to the user
@@ -150,12 +114,6 @@ Moderator.prototype.allocateConferenceFocus = function() {
 Moderator.prototype._allocateConferenceFocusSuccess = function(
         result,
         callback) {
-    // Setup config options
-    this.parseConfigOptions(result);
-
-    // Reset the error timeout (because we haven't failed here).
-
-    // eslint-disable-next-line newline-per-chained-call
     if ($(result).find('conference').attr('ready') === 'true') {
         // Reset the non-error timeout (because we've succeeded here).
         // Exec callback

@@ -50,13 +50,16 @@ export default class XMPP extends Listenable {
         this.options = options;
         this.authenticatedUser = false;
 
-        initStropheNativePlugins();
+        // initStropheNativePlugins();
+        console.log("4444444444: ", options)
 
         this.connection = createConnection({
             serviceUrl: options.serviceUrl || options.bosh,
         });
 
         this._initStrophePlugins();
+        console.log("--this.connection---:", this.connection)
+        console.log("--this.connection---:", this.connection.disco)
 
         this.caps = new Caps(this.connection);
 
@@ -71,11 +74,11 @@ export default class XMPP extends Listenable {
     initFeaturesList() {
         // http://xmpp.org/extensions/xep-0167.html#support
         // http://xmpp.org/extensions/xep-0176.html#support
-        this.caps.addFeature('urn:xmpp:jingle:1');
-        this.caps.addFeature('urn:xmpp:jingle:apps:rtp:1');
-        this.caps.addFeature('urn:xmpp:jingle:transports:ice-udp:1');
-        this.caps.addFeature('urn:xmpp:jingle:apps:dtls:0');
-        this.caps.addFeature('urn:xmpp:jingle:transports:dtls-sctp:1');
+        // this.caps.addFeature('urn:xmpp:jingle:1');
+        // this.caps.addFeature('urn:xmpp:jingle:apps:rtp:1');
+        // this.caps.addFeature('urn:xmpp:jingle:transports:ice-udp:1');
+        // this.caps.addFeature('urn:xmpp:jingle:apps:dtls:0');
+        // this.caps.addFeature('urn:xmpp:jingle:transports:dtls-sctp:1');
         this.caps.addFeature('urn:xmpp:jingle:apps:rtp:audio');
         this.caps.addFeature('urn:xmpp:jingle:apps:rtp:video');
         // this is dealt with by SDP O/A so we don't need to announce this

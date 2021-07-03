@@ -1,5 +1,4 @@
 import { Strophe } from 'strophe.js';
-import 'strophejs-plugin-stream-management';
 
 import Listenable from '../util/Listenable';
 /**
@@ -68,6 +67,7 @@ export default class XmppConnection extends Listenable {
 
         // tracks whether this is the initial connection or a reconnect
         this._oneSuccessfulConnect = false;
+        console.log("11111this._stropheConn.disco:", this._stropheConn.disco)
     }
 
     /**

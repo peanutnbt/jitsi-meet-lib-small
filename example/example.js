@@ -39,17 +39,14 @@ function onRemoteTrack(track) {
 function onConnectionSuccess(e) {
     console.log("----------Listen CONNECTION_ESTABLISHED----------: ", e)
     room = connection.initJitsiConference('1', {});
-    console.log("----------1----------: ", room)
 
     room.on('conference.trackAdded', onRemoteTrack);
-    console.log("----------2----------: ", room)
 
 
     room.on('conference.userJoined', id => {
         console.log("----------Listen User Joined: ", id)
         remoteTracks[id] = [];
     });
-    console.log("----------room----------: ", room)
     
     room.join();
 }
